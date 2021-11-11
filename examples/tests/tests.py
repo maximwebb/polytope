@@ -1,7 +1,10 @@
+import math
+import random
 import unittest
 import utils
 import transforms.basic as basic
 import transforms.lcs as lcs
+from transforms import floyd_warshall, dither
 
 
 class Basic(unittest.TestCase):
@@ -40,6 +43,33 @@ class LCS(unittest.TestCase):
         v = "MZJAWXUABBAABAB"
         res1 = lcs.lcs(u, v)
         res2 = lcs.fast_lcs(u, v)
+
+        self.assertEqual(res1, res2)
+
+
+class FloydWarshall(unittest.TestCase):
+    def test_floyd_warshall(self):
+        a = [[0, math.inf, -2, math.inf],
+             [4, 0, 3, math.inf],
+             [math.inf, math.inf, 0, 2],
+             [math.inf, -1, math.inf, 0]]
+
+        res = floyd_warshall.floyd_warshall(a)
+
+        ans = [[0, -1, -2, 0],
+               [4, 0, 2, 4],
+               [5, 1, 0, 2],
+               [3, -1, 1, 0]]
+
+        self.assertEqual(ans, res)
+
+
+class Dither(unittest.TestCase):
+    def test_dither_transform(self):
+        src = [[random.randint(0, 255) for _ in range(20)] for _ in range(10)]
+
+        res1 = dither.dither(src)
+        res2 = dither.fast_dither(src)
 
         self.assertEqual(res1, res2)
 

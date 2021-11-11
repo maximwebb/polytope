@@ -1,4 +1,6 @@
 #include <clang-c/Index.h>
+#include <iostream>
+
 
 std::ostream& operator<<(std::ostream& stream, const CXString& str) {
 	stream << clang_getCString(str);
@@ -10,11 +12,11 @@ int parse() {
 	CXIndex index = clang_createIndex(0, 0);
 	CXTranslationUnit unit = clang_parseTranslationUnit(
 			index,
-			"../header.hpp", nullptr, 0,
+			"header.hpp", nullptr, 0,
 			nullptr, 0,
 			CXTranslationUnit_None);
 	if (unit == nullptr) {
-		std::cerr << "Unable to parse translation unit. Quitting." << std::endl;
+		std::cerr << "Error parsing translation unit" << std::endl;
 		exit(-1);
 	}
 

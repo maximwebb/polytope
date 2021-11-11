@@ -20,5 +20,12 @@ def clone_arr(arr: List) -> List:
 
 
 def print_arr(arr) -> None:
-    [print(row) for row in arr]
+    if type(arr) is list:
+        if type(arr[0]) is list:
+            if type(arr[0][0]) is list:
+                [print_arr(row) for row in arr]
+            else:
+                [print(row) for row in arr]
+        else:
+            print(arr)
     print("")

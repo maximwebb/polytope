@@ -8,7 +8,7 @@ def main():
     b = clone_arr(a)
     a = basic.func2(a)
     b = basic.fast_func2(b)
-    print_arr(a)
+    print_arr([a, b])
     print_arr(b)
 
 
