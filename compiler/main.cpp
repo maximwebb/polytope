@@ -1,6 +1,9 @@
-#include "parser.h"
+#include "lexer.h"
 
 int main() {
-	parse();
+	int t;
+	while ((t = GetToken()) != tok_eof) {
+		PrintToken(t);
+	}
 	return 0;
 }

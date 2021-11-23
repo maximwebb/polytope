@@ -18,10 +18,14 @@ include(AddLLVM)
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${CLANG_INCLUDE_DIRS})
+include_directories(sandbox)
 
 add_definitions(${LLVM_DEFINITIONS})
 add_definitions(${CLANG_DEFINITIONS})
 
-add_llvm_executable(compiler parser.h main.cpp)
+file(GLOB SANDBOX
+        sandbox/*.h)
+
+add_llvm_executable(compiler ${SANDBOX} clang_ast.h main.cpp)
 set_property(TARGET compiler PROPERTY CXX_STANDARD 20)
 target_link_libraries(compiler PRIVATE clangTooling)

@@ -1,0 +1,4 @@
+def a
+	b 4
+
+extern k
