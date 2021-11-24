@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <string>
+#include <map>
 
 enum Token {
 	tok_eof = -1,
@@ -78,3 +79,10 @@ void PrintToken(int t) {
 		std::cout << "Unrecognised token" << std::endl;
 	}
 }
+
+static std::map<char, int> OperatorPrecedence = {
+		{'<', 10},
+		{'+', 20},
+		{'-', 20},
+		{'*', 40},
+};

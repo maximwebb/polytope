@@ -1,4 +1,4 @@
-def a
-	b 4
+def foo(a, b)
+	bar(2) * b - 7
 
-extern k
+foo(2, 4)
