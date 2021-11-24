@@ -4,12 +4,24 @@
 #include <utility>
 #include <vector>
 #include <numeric>
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
+//#include "llvm/IR/Verifier.h"
 
 #include "lexer.h"
 
 class ExprAST {
 public:
 	virtual ~ExprAST() {}
+	virtual llvm::Value* CodeGen() = 0;
 	virtual void Print(int indent = 0) const = 0;
 };
 
@@ -18,6 +30,8 @@ private:
 	double val;
 public:
 	explicit NumberExprAST(double val) : val(val) {}
+	virtual llvm::Value* CodeGen();
+
 	void Print(int indent = 0) const override {
 		auto s = std::string(indent * 2, ' ') + "| ";
 		std::cout << s << "NUM " << val << std::endl;
@@ -29,6 +43,8 @@ private:
 	std::string name;
 public:
 	explicit VariableExprAST(std::string name) : name(std::move(name)) {}
+	virtual llvm::Value* CodeGen();
+
 	void Print(int indent = 0) const override {
 		auto s = std::string(indent * 2, ' ') + "| ";
 		std::cout << s << "VAR " << name << std::endl;
@@ -42,6 +58,7 @@ private:
 public:
 	BinaryExprAST(char op, std::unique_ptr<ExprAST> left, std::unique_ptr<ExprAST> right)
 			: op(op), left(std::move(left)), right(std::move(right)) {}
+	virtual llvm::Value* CodeGen();
 
 	void Print(int indent = 0) const override {
 		auto s = std::string(indent * 2, ' ') + "| ";
@@ -58,6 +75,7 @@ private:
 public:
 	CallExprAST(std::string callee, std::vector<std::unique_ptr<ExprAST>> args)
 			: callee(std::move(callee)), args(std::move(args)) {}
+	virtual llvm::Value* CodeGen();
 
 	void Print(int indent = 0) const override {
 		auto s = std::string(indent * 2, ' ') + "| ";
@@ -68,15 +86,20 @@ public:
 	}
 };
 
-class PrototypeAST : ExprAST {
+class PrototypeAST {
 private:
 	std::string name;
 	std::vector<std::string> args;
 public:
 	PrototypeAST(std::string name, std::vector<std::string> args)
 			: name(std::move(name)), args(std::move(args)) {};
+	llvm::Function* CodeGen();
 
-	void Print(int indent = 0) const override {
+	const std::string& GetName() {
+		return name;
+	}
+
+	void Print(int indent = 0) const {
 		auto s = std::string(indent * 2, ' ') + "| ";
 		std::cout << s << "NAME " << name << std::endl;
 		std::string arg_list = std::accumulate(std::begin(args), std::end(args), std::string(),
@@ -87,15 +110,16 @@ public:
 	}
 };
 
-class FunctionAST : ExprAST {
+class FunctionAST {
 private:
 	std::unique_ptr<PrototypeAST> prototype;
 	std::unique_ptr<ExprAST> body;
 public:
 	FunctionAST(std::unique_ptr<PrototypeAST> prototype, std::unique_ptr<ExprAST> body)
 			: prototype(std::move(prototype)), body(std::move(body)) {}
+	llvm::Function* CodeGen();
 
-	void Print(int indent = 0) const override {
+	void Print(int indent = 0) const {
 		auto s = std::string(indent * 2, ' ') + "| ";
 		std::cout << s << "FUNC  " << std::endl;
 		prototype->Print(indent + 1);
@@ -107,9 +131,7 @@ public:
 static int g_token;
 
 static int GetNextToken() {
-	g_token = GetToken();
-//	PrintToken(g_token);
-	return g_token;
+	return g_token = GetToken();
 }
 
 static std::unique_ptr<ExprAST> ParseExpr();
@@ -282,6 +304,7 @@ static std::unique_ptr<ExprAST> ParseExpr() {
 static void HandleDefinition() {
 	if (auto e = ParseDefinition()) {
 		e->Print();
+		e->CodeGen();
 	} else {
 		std::cout << "Error handling definition." << std::endl;
 		GetNextToken();
@@ -291,6 +314,7 @@ static void HandleDefinition() {
 static void HandleExtern() {
 	if (auto e = ParseExtern()) {
 		e->Print();
+		e->CodeGen();
 	} else {
 		std::cout << "Error handling extern." << std::endl;
 		GetNextToken();
@@ -299,16 +323,14 @@ static void HandleExtern() {
 
 static void HandleTopLevelExpr() {
 	if (auto e = ParseTopLevelExpr()) {
-		e->Print();
+//		e->Print();
+		e->CodeGen();
 	} else {
 		std::cout << "Error parsing top-level expression." << std::endl;
 		GetNextToken();
 	}
 }
 
-static void PrintAST() {
-
-}
 
 static void driver() {
 	std::cout << "Parsing File" << std::endl;
