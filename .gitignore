@@ -2,3 +2,6 @@ examples/__pycache__
 examples/.idea
 compiler/.idea
 compiler/cmake-build-debug
+polytope-pass/cmake-build-debug
+polytope-pass/.idea
+llvm-project/
