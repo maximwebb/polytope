@@ -5,4 +5,5 @@ compiler/cmake-build-debug
 polytope-pass/.idea
 polytope-pass/cmake-build-debug
 polytope-pass/CMakeFiles
+polytope-pass/diagrams/*
 llvm-project/

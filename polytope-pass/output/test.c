@@ -23,7 +23,7 @@ int bar(int N) {
 			}
 		}
 	}
-	return N;
+	return j;
 }
 
 /* Imperfect loop */

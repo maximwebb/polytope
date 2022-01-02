@@ -14,11 +14,7 @@
 using namespace llvm;
 
 	PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStandardAnalysisResults& AR, LPMUpdater& U) {
-//			bool Changed = runOnLoop(L, AR);
-//			if (true) {
-			std::cout << "Inserted" << std::endl;
-//				return PreservedAnalyses::none();
-//			}
+		std::cout << "Inserted" << std::endl;
 		return PreservedAnalyses::all();
 	}
 

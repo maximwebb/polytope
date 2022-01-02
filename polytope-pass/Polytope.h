@@ -12,8 +12,6 @@ namespace llvm {
 class PolytopePass : public PassInfoMixin<PolytopePass> {
 public:
   PreservedAnalyses run(Loop& L, LoopAnalysisManager& AM, LoopStandardAnalysisResults& AR, LPMUpdater& U);
-
-  bool isPerfectNest(Loop& L, LoopInfo& LI, ScalarEvolution& SE);
 };
 
 } // namespace llvm

@@ -64,7 +64,7 @@ for.inc5:                                         ; preds = %for.end
   br label %for.cond, !llvm.loop !6
 
 for.end7:                                         ; preds = %for.cond
-  %9 = load i32, i32* %N.addr, align 4
+  %9 = load i32, i32* @j, align 4
   ret i32 %9
 }
 

@@ -1,4 +1,4 @@
-; ModuleID = 'test.ll'
+; ModuleID = 'output/test_opt.ll'
 source_filename = "test.c"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
@@ -10,11 +10,11 @@ define dso_local i32 @bar(i32 %N) #0 {
 entry:
   br label %for.cond1.preheader
 
-for.cond1.preheader:                              ; preds = %entry, %for.inc5
+for.cond1.preheader:                              ; preds = %for.inc5, %entry
   %i.03 = phi i32 [ 0, %entry ], [ %inc6, %for.inc5 ]
   br label %for.body3
 
-for.body3:                                        ; preds = %for.cond1.preheader, %for.inc
+for.body3:                                        ; preds = %for.inc, %for.cond1.preheader
   %k.02 = phi i32 [ 3, %for.cond1.preheader ], [ %inc, %for.inc ]
   %0 = load i32, i32* @j, align 4
   %add = add nsw i32 %0, %i.03
@@ -28,7 +28,7 @@ if.then:                                          ; preds = %for.body3
   store i32 %sub, i32* @j, align 4
   br label %for.inc
 
-for.inc:                                          ; preds = %for.body3, %if.then
+for.inc:                                          ; preds = %if.then, %for.body3
   %inc = add nuw nsw i32 %k.02, 1
   %exitcond = icmp ne i32 %inc, 9
   br i1 %exitcond, label %for.body3, label %for.inc5, !llvm.loop !4
