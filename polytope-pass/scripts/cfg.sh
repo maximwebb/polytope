@@ -7,7 +7,7 @@ cd "${SCRIPT_DIR}"/diagrams || exit
 # Give user option to pass in custom file
 if [ "$1" == "" ]
 then
-  ./run.sh
+  ../scripts/run.sh
   opt -dot-cfg ../output/test_poly_opt.ll -enable-new-pm=0 -disable-output
 else
   opt -dot-cfg ../output/"$1" -enable-new-pm=0 -disable-output

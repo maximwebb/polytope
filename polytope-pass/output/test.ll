@@ -21,27 +21,30 @@ for.cond:                                         ; preds = %for.inc5, %entry
   br i1 %cmp, label %for.body, label %for.end7
 
 for.body:                                         ; preds = %for.cond
-  store i32 3, i32* %k, align 4
+  %1 = load i32, i32* %i, align 4
+  store i32 %1, i32* %k, align 4
   br label %for.cond1
 
 for.cond1:                                        ; preds = %for.inc, %for.body
-  %1 = load i32, i32* %k, align 4
-  %cmp2 = icmp slt i32 %1, 9
+  %2 = load i32, i32* %k, align 4
+  %3 = load i32, i32* %i, align 4
+  %mul = mul nsw i32 2, %3
+  %cmp2 = icmp slt i32 %2, %mul
   br i1 %cmp2, label %for.body3, label %for.end
 
 for.body3:                                        ; preds = %for.cond1
-  %2 = load i32, i32* %i, align 4
-  %3 = load i32, i32* @j, align 4
-  %add = add nsw i32 %3, %2
+  %4 = load i32, i32* %i, align 4
+  %5 = load i32, i32* @j, align 4
+  %add = add nsw i32 %5, %4
   store i32 %add, i32* @j, align 4
-  %4 = load i32, i32* %N.addr, align 4
-  %cmp4 = icmp sgt i32 %4, 2
+  %6 = load i32, i32* %N.addr, align 4
+  %cmp4 = icmp sgt i32 %6, 2
   br i1 %cmp4, label %if.then, label %if.end
 
 if.then:                                          ; preds = %for.body3
-  %5 = load i32, i32* %k, align 4
-  %6 = load i32, i32* @j, align 4
-  %sub = sub nsw i32 %6, %5
+  %7 = load i32, i32* %k, align 4
+  %8 = load i32, i32* @j, align 4
+  %sub = sub nsw i32 %8, %7
   store i32 %sub, i32* @j, align 4
   br label %if.end
 
@@ -49,8 +52,8 @@ if.end:                                           ; preds = %if.then, %for.body3
   br label %for.inc
 
 for.inc:                                          ; preds = %if.end
-  %7 = load i32, i32* %k, align 4
-  %inc = add nsw i32 %7, 1
+  %9 = load i32, i32* %k, align 4
+  %inc = add nsw i32 %9, 1
   store i32 %inc, i32* %k, align 4
   br label %for.cond1, !llvm.loop !4
 
@@ -58,14 +61,14 @@ for.end:                                          ; preds = %for.cond1
   br label %for.inc5
 
 for.inc5:                                         ; preds = %for.end
-  %8 = load i32, i32* %i, align 4
-  %inc6 = add nsw i32 %8, 1
+  %10 = load i32, i32* %i, align 4
+  %inc6 = add nsw i32 %10, 1
   store i32 %inc6, i32* %i, align 4
   br label %for.cond, !llvm.loop !6
 
 for.end7:                                         ; preds = %for.cond
-  %9 = load i32, i32* @j, align 4
-  ret i32 %9
+  %11 = load i32, i32* @j, align 4
+  ret i32 %11
 }
 
 ; Function Attrs: noinline nounwind uwtable

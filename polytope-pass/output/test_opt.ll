@@ -8,14 +8,16 @@ target triple = "x86_64-unknown-linux-gnu"
 ; Function Attrs: noinline nounwind uwtable
 define dso_local i32 @bar(i32 %N) #0 {
 entry:
-  br label %for.cond1.preheader
+  br label %for.body
 
-for.cond1.preheader:                              ; preds = %entry, %for.inc5
+for.body:                                         ; preds = %entry, %for.inc5
   %i.03 = phi i32 [ 0, %entry ], [ %inc6, %for.inc5 ]
-  br label %for.body3
+  %mul = shl nuw nsw i32 %i.03, 1
+  %cmp21 = icmp ult i32 %i.03, %mul
+  br i1 %cmp21, label %for.body3, label %for.inc5
 
-for.body3:                                        ; preds = %for.cond1.preheader, %for.inc
-  %k.02 = phi i32 [ 3, %for.cond1.preheader ], [ %inc, %for.inc ]
+for.body3:                                        ; preds = %for.body, %for.inc
+  %k.02 = phi i32 [ %inc, %for.inc ], [ %i.03, %for.body ]
   %0 = load i32, i32* @j, align 4
   %add = add nsw i32 %0, %i.03
   store i32 %add, i32* @j, align 4
@@ -30,13 +32,13 @@ if.then:                                          ; preds = %for.body3
 
 for.inc:                                          ; preds = %for.body3, %if.then
   %inc = add nuw nsw i32 %k.02, 1
-  %exitcond = icmp ne i32 %inc, 9
-  br i1 %exitcond, label %for.body3, label %for.inc5, !llvm.loop !4
+  %cmp2 = icmp ult i32 %inc, %mul
+  br i1 %cmp2, label %for.body3, label %for.inc5, !llvm.loop !4
 
-for.inc5:                                         ; preds = %for.inc
+for.inc5:                                         ; preds = %for.body, %for.inc
   %inc6 = add nuw nsw i32 %i.03, 1
-  %exitcond1 = icmp ne i32 %inc6, 6
-  br i1 %exitcond1, label %for.cond1.preheader, label %for.end7, !llvm.loop !6
+  %exitcond.not = icmp eq i32 %inc6, 6
+  br i1 %exitcond.not, label %for.end7, label %for.body, !llvm.loop !6
 
 for.end7:                                         ; preds = %for.inc5
   %2 = load i32, i32* @j, align 4
