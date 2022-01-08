@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(polytope-pass)
-set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
+#set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
+set(CMAKE_CXX_STANDARD 20)
 find_package(Clang REQUIRED)
 
 set(LT_LLVM_INSTALL_DIR "" CACHE PATH "LLVM installation directory")

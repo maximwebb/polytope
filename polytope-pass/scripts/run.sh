@@ -5,7 +5,7 @@ OPT_PATH=${SCRIPT_DIR}/../llvm-project/llvm/build/bin/opt
 cd ${SCRIPT_DIR}/output
 
 clang -emit-llvm -fno-discard-value-names -O0 -Xclang -disable-O0-optnone test.c -S -o test.ll
-${OPT_PATH} -S -passes="mem2reg,indvars,loop-rotate,simplifycfg,instcombine" test.ll -o test_opt.ll
+${OPT_PATH} -S -passes="mem2reg,loop-rotate,simplifycfg,instcombine" test.ll -o test_opt.ll
 echo "foo"
 if [ "$1" != 'polynone' ]
 then
