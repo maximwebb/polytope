@@ -25,6 +25,9 @@ set(CMAKE_CXX_FLAGS "-fPIE")
 set(FOO "BAR")
 
 add_library(polytope-pass SHARED Polytope.cpp)
+
+add_executable(integer-solver main.cpp)
+
 target_include_directories(
   polytope-pass
   PRIVATE
