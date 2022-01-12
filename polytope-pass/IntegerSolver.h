@@ -102,6 +102,25 @@ public:
 		return res;
 	}
 
+	static std::vector<std::vector<int>>
+	Multiply(const std::vector<std::vector<int>>& A, const std::vector<std::vector<int>>& B) {
+		std::vector<std::vector<int>> res;
+
+		unsigned h = A.size();
+		unsigned w = B[0].size();
+		unsigned n = B.size();
+
+		for (int i = 0; i < h; i++) {
+			res.emplace_back(w, 0);
+			for (int j = 0; j < w; j++) {
+				for (int k = 0; k < n; k++) {
+					res[i][j] += A[i][k] * B[k][j];
+				}
+			}
+		}
+		return res;
+	}
+
 	static std::optional<std::vector<int>>
 	SolveSystem(const std::vector<std::vector<int>>& A, const std::vector<int>& b) {
 		auto snf = SmithNormal(A);
@@ -111,12 +130,13 @@ public:
 
 
 		for (int i = 0; i < h; i++) {
-			/* System has no solution */
-			if (b[i] % snf.D[i][i] != 0) {
-				return {};
-			}
+			/* Return no solution if any variable has a non-integer solution, or no solution at all. */
 			if (snf.D[i][i] == 0) {
-				c[i] = 0;
+				if (c[i] != 0) {
+					return {};
+				}
+			} else if (b[i] % snf.D[i][i] != 0) {
+				return {};
 			} else {
 				c[i] /= snf.D[i][i];
 			}
@@ -124,6 +144,22 @@ public:
 
 		c.insert(c.end(), w - h, 0);
 		return LinearTransform(snf.R, c);
+	}
+
+	static std::pair<std::vector<std::vector<int>>, std::vector<std::vector<int>>> GetGenerators(unsigned dim) {
+		std::vector<std::vector<int>> A;
+		std::vector<std::vector<int>> B = IdentityMatrix(dim);
+
+		A.emplace_back(dim, 0);
+		A.at(0).back() = -1;
+
+		for (int i = 0; i < dim - 1; i++) {
+			A.emplace_back(dim, 0);
+			A[i + 1][i] = -1;
+		}
+		B.at(0).at(1) = 1;
+
+		return {A, B};
 	}
 
 private:

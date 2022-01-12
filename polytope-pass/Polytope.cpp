@@ -247,16 +247,74 @@ ArrayAssignment PolytopePass::ExtractArrayAccesses(Loop& L, LoopStandardAnalysis
 	return {writeVector, readVectors};
 }
 
+ArrayAssignment
+PolytopePass::TransformAssignment(const ArrayAssignment& assignment, const std::vector<std::vector<int>>& transform) {
+	std::vector<std::vector<int>> writeVector;
+	std::vector<std::vector<std::vector<int>>> readVectors;
+
+	std::vector<std::vector<int>> transform1;
+	for (auto& row : transform) {
+		auto v = row;
+		v.push_back(0);
+		transform1.push_back(v);
+	}
+	transform1.emplace_back(transform1.at(0).size(), 0);
+	transform1.back().back() = 1;
+
+	for (auto& writeIndex: assignment.writeAccess) {
+		writeVector.push_back(IntegerSolver::LinearTransform(transform1, writeIndex));
+	}
+
+	/* Can this be done with a single matrix multiplication? */
+	for (auto& readVector: assignment.readAccesses) {
+		std::vector<std::vector<int>> v;
+		v.reserve(readVector.size());
+		for (auto& readIndex: readVector) {
+			v.push_back(IntegerSolver::LinearTransform(transform1, readIndex));
+		}
+		readVectors.push_back(v);
+	}
+
+	return {writeVector, readVectors};
+}
+
+std::optional<std::vector<std::vector<int>>>
+PolytopePass::ComputeAffineTransformationInner(const ArrayAssignment& assignment,
+											   const std::vector<std::vector<int>>& genA,
+											   const std::vector<std::vector<int>>& genB,
+											   const std::vector<std::vector<int>>& transform,
+											   int depth) {
+	auto transformedAssignment = TransformAssignment(assignment, transform);
+	if (!transformedAssignment.HasLoopCarrierDependencies()) {
+		return transform;
+	}
+	if (depth == 0) {
+		return {};
+	}
+	depth--;
+
+	auto transform1 = ComputeAffineTransformationInner(assignment, genA, genB, IntegerSolver::Multiply(genA, transform),
+													   depth);
+	auto transform2 = ComputeAffineTransformationInner(assignment, genA, genB, IntegerSolver::Multiply(genB, transform),
+													   depth);
+
+	return transform1 ? transform1 : transform2;
+}
+
 std::optional<std::vector<std::vector<int>>>
 PolytopePass::ComputeAffineTransformation(const ArrayAssignment& assignment) {
 	if (!assignment.HasLoopCarrierDependencies()) {
 		return {};
 	}
 
+	unsigned dim = IVList.size();
 
+	auto generators = IntegerSolver::GetGenerators(dim);
 
-	return {};
+	return ComputeAffineTransformationInner(assignment, generators.first, generators.second,
+											IntegerSolver::IdentityMatrix(dim), 5);
 }
+
 
 PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStandardAnalysisResults& AR, LPMUpdater& U) {
 	if (!RunAnalysis(L, AR)) {

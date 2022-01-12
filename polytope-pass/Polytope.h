@@ -36,6 +36,14 @@ namespace llvm {
 		GetAffineValue(Value* V, const std::vector<int>& Transform, const std::vector<Value*>& Visited, int scale);
 		ArrayAssignment ExtractArrayAccesses(Loop& L, LoopStandardAnalysisResults& AR);
 		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformation(const ArrayAssignment& assignment);
+		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformationInner(const ArrayAssignment& assignment,
+																					  const std::vector<std::vector<int>>& genA,
+																					  const std::vector<std::vector<int>>& genB,
+																					  const std::vector<std::vector<int>>& transform,
+																					  int depth);
+
+		ArrayAssignment
+		TransformAssignment(const ArrayAssignment& assignment, const std::vector<std::vector<int>>& transform);
 	};
 
 } // namespace llvm
