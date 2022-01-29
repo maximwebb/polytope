@@ -20,12 +20,76 @@ class Basic(unittest.TestCase):
 
         self.assertEqual(res1, res2)
 
+    def test_basic1_is_correct(self):
+        data1 = utils.fill_arr(100)
+        data2 = utils.clone_arr(data1)
+
+        res1 = basic.func1(data1)
+        res2 = basic.fast_func1(data2)
+
+        self.assertEqual(res1, res2)
+
     def test_basic_2_is_correct(self):
         data1 = utils.fill_arr(100)
         data2 = utils.clone_arr(data1)
 
         res1 = basic.func2(data1)
         res2 = basic.fast_func2(data2)
+
+        self.assertEqual(res1, res2)
+
+    def test_basic_3_is_correct(self):
+        data1 = utils.fill_arr(100)
+        data2 = utils.clone_arr(data1)
+
+        res1 = basic.func3(data1)
+        res2 = basic.fast_func3(data2)
+
+        self.assertEqual(res1, res2)
+
+    def test_basic_4_is_correct(self):
+        data1 = utils.fill_arr(100)
+        data2 = utils.clone_arr(data1)
+
+        res1 = basic.func4(data1)
+        res2 = basic.fast_func4(data2)
+
+        self.assertEqual(res1, res2)
+
+    def test_basic_5_is_correct(self):
+        data1 = utils.fill_arr(100)
+        data2 = utils.clone_arr(data1)
+
+        res1 = basic.func5(data1)
+        res2 = basic.fast_func5(data2)
+
+        self.assertEqual(res1, res2)
+
+    def test_basic_6_is_correct(self):
+        data1 = utils.fill_arr(100)
+        data2 = utils.clone_arr(data1)
+
+        res1 = basic.func6(data1)
+        res2 = basic.fast_func6(data2)
+
+        self.assertEqual(res1, res2)
+
+
+    def test_basic_7_is_correct(self):
+        data1 = utils.fill_arr(100)
+        data2 = utils.clone_arr(data1)
+
+        res1 = basic.func6(data1)
+        res2 = basic.fast_func7(data2)
+
+        self.assertEqual(res1, res2)
+
+    def test_bounds(self):
+        data1 = utils.fill_arr(100)
+        data2 = utils.clone_arr(data1)
+
+        res1 = basic.fast_func6(data1)
+        res2 = basic.fast_func7(data2)
 
         self.assertEqual(res1, res2)
 
