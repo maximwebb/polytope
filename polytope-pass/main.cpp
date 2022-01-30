@@ -16,5 +16,10 @@ int main() {
 	auto sol = IntegerSolver::SolveSystem(A, {2, 4});
 
 	auto sol2 = IntegerSolver::SolveSystem({{2, 2}}, {1});
+
+
+	std::vector<std::vector<int>> C = {{4, 7},
+									  {2, 6}};
+	auto sol3 = IntegerSolver::HermiteNormal(C);
 	return 0;
 }

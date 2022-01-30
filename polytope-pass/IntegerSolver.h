@@ -85,6 +85,58 @@ public:
 		return {L, D, R};
 	}
 
+	/* Used for determining transformed loop bounds for a lattice */
+	static std::vector<std::vector<int>> HermiteNormal(const std::vector<std::vector<int>>& A) {
+		std::vector<std::vector<int>> D = A;
+		unsigned N = A.size();
+		int i = 0;
+
+		while (i < N) {
+			bool rowComplete = true;
+			for (int j = i + 1; j < N; j++) {
+				rowComplete &= D[i][j] == 0;
+			}
+			if (rowComplete) {
+				if (D[i][i] < 0) {
+					NegateCol(D, i);
+				}
+				i++;
+				continue;
+			}
+			/* Choose smallest absolute element in row to act as pivot */
+			int pivot = MAX_INT;
+			int pivot_index = -1;
+			for (int j = 0; j < N; j++) {
+				int el = D[i][j];
+				if (abs(el) < pivot && el != 0) {
+					pivot_index = j;
+					pivot = el;
+				}
+			}
+			SwapCols(D, i, pivot_index);
+			for (int j = i + 1; j < N; j++) {
+				int q = D[i][j]/pivot;
+				for (int k = 0; k < N; k++) {
+					D[k][j] -= q * D[k][i];
+				}
+			}
+		}
+
+		for (i = 0; i < N; i++) {
+			for (int j = 0; j < i; j++) {
+				if (D[i][j] < 0) {
+					int b = SignedDiv(D[i][j], D[i][i]);
+					for (int k = 0; k < N; k++) {
+						D[k][j] -= b * D[k][i];
+					}
+				}
+			}
+		}
+
+
+		return D;
+	}
+
 	static std::vector<int> LinearTransform(const std::vector<std::vector<int>>& A, const std::vector<int>& x) {
 		std::vector<int> res(A.size(), 0);
 		unsigned h = A.size();
@@ -228,6 +280,12 @@ private:
 			int tmp = row[col1];
 			row[col1] = row[col2];
 			row[col2] = tmp;
+		}
+	}
+
+	static void NegateCol(std::vector<std::vector<int>>& A, int i) {
+		for (auto& row : A) {
+			row[i] *= -1;
 		}
 	}
 };
