@@ -9,6 +9,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
 
@@ -89,17 +90,17 @@ PolytopePass::GetAffineValue(Value* V, const std::vector<int>& Transform, const 
 		auto* MulInstr = dyn_cast<MulOperator>(V);
 		if (isa<Constant>(MulInstr->getOperand(0))) {
 			return GetAffineValue(MulInstr->getOperand(1), Transform, Visited,
-								  scale * GetConstantInt(MulInstr->getOperand(0)));
+								  scale * ValueToInt(MulInstr->getOperand(0)));
 		} else if (isa<Constant>(MulInstr->getOperand(1))) {
 			return GetAffineValue(MulInstr->getOperand(0), Transform, Visited,
-								  scale * GetConstantInt(MulInstr->getOperand(1)));
+								  scale * ValueToInt(MulInstr->getOperand(1)));
 		}
 		return {};
 	}
 	if (isa<ShlOperator>(V)) {
 		auto* ShlInstr = dyn_cast<ShlOperator>(V);
 		if (isa<Constant>(ShlInstr->getOperand(1))) {
-			auto Multiplier = 1 << GetConstantInt(ShlInstr->getOperand(1));
+			auto Multiplier = 1 << ValueToInt(ShlInstr->getOperand(1));
 			return GetAffineValue(ShlInstr->getOperand(0), Transform, Visited, scale * Multiplier);
 		}
 		return {};
@@ -108,7 +109,7 @@ PolytopePass::GetAffineValue(Value* V, const std::vector<int>& Transform, const 
 	if (isa<BinaryOperator>(V)) {
 		auto* BinInstr = dyn_cast<BinaryOperator>(V);
 		/* The instruction %1 = xor k -1 simplifies to %1 = -k - 1 */
-		if (BinInstr->getOpcode() == Instruction::Xor && GetConstantInt(BinInstr->getOperand(1)) == -1) {
+		if (BinInstr->getOpcode() == Instruction::Xor && ValueToInt(BinInstr->getOperand(1)) == -1) {
 			auto res = GetAffineValue(BinInstr->getOperand(0), Transform, Visited, -scale);
 			if (res) {
 				res.value().back() -= 1;
@@ -133,7 +134,6 @@ PolytopePass::GetAffineValue(Value* V, const std::vector<int>& Transform, const 
 	}
 	if (isa<CastInst>(V)) {
 		auto* CastInstr = dyn_cast<CastInst>(V);
-		PrintValue(CastInstr->getOperand(0));
 		return GetAffineValue(CastInstr->getOperand(0), Transform, Visited, scale);
 	}
 
@@ -253,7 +253,7 @@ PolytopePass::TransformAssignment(const ArrayAssignment& assignment, const std::
 	std::vector<std::vector<std::vector<int>>> readVectors;
 
 	std::vector<std::vector<int>> transform1;
-	for (auto& row : transform) {
+	for (auto& row: transform) {
 		auto v = row;
 		v.push_back(0);
 		transform1.push_back(v);
@@ -323,14 +323,247 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 
 	auto assignment = ExtractArrayAccesses(L, AR);
 	auto transformation = ComputeAffineTransformation(assignment);
+	auto T = transformation.value();
+//	std::vector<std::vector<int>> T = {{4, 2},
+//									   {1, 3}};
+	auto H = IntegerSolver::HermiteNormal(T);
+
+	auto outerBounds = outerLoop->getBounds(AR.SE).getValue();
+	auto innerBounds = innerLoop->getBounds(AR.SE).getValue();
+
+	auto Int32Ty = outerLoop->getInductionVariable(AR.SE)->getType();
+	auto FloatTy = Type::getFloatTy(outerLoop->getHeader()->getContext());
+
+	/* Extract redundant IV instructions */
+	auto oldOuterIV = outerLoop->getInductionVariable(AR.SE);
+	auto oldInnerIV = innerLoop->getInductionVariable(AR.SE);
+	auto oldOuterComparison = outerLoop->getLatchCmpInst();
+	auto oldInnerComparison = innerLoop->getLatchCmpInst();
+	/* Retrieve increment instructions by analysing comparison */
+	auto oldOuterIncrement = cast<Instruction>(oldOuterComparison->getOperand(0));
+	auto oldInnerIncrement = cast<Instruction>(oldInnerComparison->getOperand(0));
+	auto oldOuterBranch = FindInstr(Instruction::Br, outerLoop->getLoopLatch()).value();
+	auto oldInnerBranch = FindInstr(Instruction::Br, innerLoop->getLoopLatch()).value();
+
+	/* Update outer loop header */
+	IRBuilder builder(outerLoop->getHeader()->getContext());
+	builder.SetInsertPoint(outerLoop->getHeader()->getFirstNonPHI());
+	auto outerLowerBound = builder.CreateAdd(
+			builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getInitialIVValue()),
+			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getInitialIVValue()), "p.lower");
+	auto outerIV = builder.CreatePHI(Int32Ty, 2, "p");
+//	auto iNew = builder.CreateAdd(outerIV, IntToValue(9), "i.new");
+
+	/* Update outer loop latch */
+	builder.SetInsertPoint(outerLoop->getLoopLatch()->getTerminator());
+	auto outerIncrement = builder.CreateAdd(outerIV, IntToValue(H[0][0]), "p.inc");
+	outerIV->addIncoming(outerLowerBound, outerLoop->getLoopPreheader());
+	outerIV->addIncoming(outerIncrement, outerLoop->getLoopLatch());
+	auto outerUpperBound = builder.CreateAdd(
+			builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getFinalIVValue()),
+			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getFinalIVValue()), "p.upper");
+	auto outerComp = builder.CreateCmp(CmpInst::ICMP_NE, outerIncrement, outerUpperBound);
+	auto outerBranch = builder.CreateCondBr(outerComp, outerLoop->getHeader(), outerLoop->getExitBlock());
+
+	/* Determine values for inner loop bounds */
+	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
+	auto l1 = builder.CreateSub(
+			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getFinalIVValue())),
+			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getInitialIVValue()), "l1");
+
+	auto l1Ceil = builder.CreateAdd(
+		builder.CreateCast(
+			Instruction::FPToSI,
+			builder.CreateMaximum(
+				builder.CreateCast(
+					Instruction::SIToFP,
+					builder.CreateAdd(
+						builder.CreateMul(
+							IntToValue(T[1][0]),
+							builder.CreateSDiv(l1, IntToValue(T[0][0]))
+						),
+						builder.CreateCast(
+							Instruction::FPToSI,
+							builder.CreateMinimum(
+								builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l1, IntToValue(T[0][0])), FloatTy),
+								builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
+							),
+							Int32Ty
+						)
+					),
+					FloatTy
+				),
+				builder.CreateCast(
+					Instruction::SIToFP,
+					builder.CreateAdd(
+						builder.CreateMul(
+							IntToValue(T[1][1]),
+							builder.CreateSDiv(l1, IntToValue(T[0][1]))
+						),
+						builder.CreateCast(
+							Instruction::FPToSI,
+							builder.CreateMinimum(
+								builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l1, IntToValue(T[0][1])), FloatTy),
+								builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
+							),
+							Int32Ty
+						)
+					),
+					FloatTy
+				)
+			),
+			Int32Ty
+		),
+		builder.CreateAdd(
+			builder.CreateMul(IntToValue(T[1][0]), &outerBounds.getFinalIVValue()),
+			builder.CreateMul(IntToValue(T[1][1]), &innerBounds.getInitialIVValue())
+		),
+		"l1.ceil"
+	);
+
+	auto l3 = builder.CreateSub(
+			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getInitialIVValue())),
+			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getFinalIVValue()), "l3");
+
+	/* Upper bound for inner loop */
+	auto innerUpperBound = builder.CreateAdd(
+			builder.CreateCast(
+				Instruction::FPToSI,
+				builder.CreateMinimum(
+					builder.CreateCast(
+						Instruction::SIToFP,
+						builder.CreateAdd(
+							builder.CreateMul(
+								IntToValue(T[1][0]),
+								builder.CreateSDiv(l3, IntToValue(T[0][0]))
+							),
+							builder.CreateCast(
+								Instruction::FPToSI,
+								builder.CreateMinimum(
+									builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l3, IntToValue(T[0][0])), FloatTy),
+									builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
+								),
+								Int32Ty
+							)
+						),
+						FloatTy
+					),
+					builder.CreateCast(
+						Instruction::SIToFP,
+						builder.CreateAdd(
+							builder.CreateMul(
+								IntToValue(T[1][1]),
+								builder.CreateSDiv(l3, IntToValue(T[0][1]))
+							),
+							builder.CreateCast(
+								Instruction::FPToSI,
+								builder.CreateMinimum(
+									builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l3, IntToValue(T[0][1])), FloatTy),
+									builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
+								),
+								Int32Ty
+							)
+						),
+						FloatTy
+					)
+				),
+		   	Int32Ty
+		   ),
+		builder.CreateAdd(
+			builder.CreateMul(IntToValue(T[1][0]), &outerBounds.getInitialIVValue()),
+			builder.CreateMul(IntToValue(T[1][1]), &innerBounds.getFinalIVValue())
+		),
+		"q.upper"
+	);
+
+	auto offset = builder.CreateSRem(
+		builder.CreateSub(
+			builder.CreateMul(
+				IntToValue(H[1][0]),
+				builder.CreateSDiv(outerIV, IntToValue(H[0][0]))
+			),
+			l1Ceil
+		),
+		IntToValue(H[1][1]),
+		"offset"
+	);
+
+	/* Update inner loop header */
+	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
+	auto innerLowerBound = builder.CreateAdd(l1Ceil, offset, "q.lower");
+	builder.SetInsertPoint(innerLoop->getHeader()->getFirstNonPHI());
+	auto innerIV = builder.CreatePHI(Int32Ty, 2, "q");
+	auto iNew = builder.CreateSDiv(
+				builder.CreateSub(
+					builder.CreateMul(
+						IntToValue(T[1][1]),
+						outerIV
+					),
+					builder.CreateMul(
+						IntToValue(T[0][1]),
+						innerIV
+					)
+				),
+				IntToValue(T[0][0] * T[1][1] - T[0][1] * T[1][0]),
+				"i.new"
+		   );
+	auto jNew = builder.CreateSDiv(
+					builder.CreateSub(
+						builder.CreateMul(
+							IntToValue(T[0][0]),
+							innerIV
+						),
+						builder.CreateMul(
+							IntToValue(T[1][0]),
+							outerIV
+						)
+					),
+				   	IntToValue(T[0][0] * T[1][1] - T[0][1] * T[1][0]),
+				   	"j.new"
+			   );
+
+	/* Update inner loop latch */
+	builder.SetInsertPoint(innerLoop->getLoopLatch()->getTerminator());
+	auto innerIncrement = builder.CreateAdd(innerIV, IntToValue(H[1][1]), "q.inc");
+	innerIV->addIncoming(innerLowerBound, outerLoop->getHeader());
+	innerIV->addIncoming(innerIncrement, innerLoop->getLoopLatch());
+
+	auto innerComp = builder.CreateCmp(CmpInst::ICMP_NE, innerIncrement, innerUpperBound);
+	auto innerBranch = builder.CreateCondBr(innerComp, innerLoop->getHeader(), innerLoop->getExitBlock());
+
+
+	/* Clean up old induction variables */
+	oldOuterIV->replaceAllUsesWith(iNew);
+	oldInnerIV->replaceAllUsesWith(jNew);
+	oldOuterIncrement->eraseFromParent();
+	oldInnerIncrement->eraseFromParent();
+	oldOuterComparison->eraseFromParent();
+	oldInnerComparison->eraseFromParent();
+	oldOuterBranch->eraseFromParent();
+	oldInnerBranch->eraseFromParent();
 
 	return PreservedAnalyses::all();
 }
 
-int PolytopePass::GetConstantInt(Value* V) {
+std::optional<Instruction*> PolytopePass::FindInstr(unsigned int opCode, BasicBlock* basicBlock) {
+	auto instr = std::find_if(basicBlock->begin(), basicBlock->end(),
+							  [opCode](Instruction& I) { return I.getOpcode() == opCode; });
+	if (instr != std::end(*basicBlock)) {
+		// Pointer hack to get correct type
+		return &*instr;
+	}
+	return {};
+}
+
+int PolytopePass::ValueToInt(Value* V) {
 	auto k = dyn_cast<ConstantInt>(V);
 	return k->getSExtValue();
 }
+
+Value* PolytopePass::IntToValue(int n) {
+	return ConstantInt::get(IntegerType::getInt32Ty(outerLoop->getHeader()->getContext()), n);
+}
+
 
 void PolytopePass::PrintValue(Value* V) {
 	if (V->getName().empty()) {

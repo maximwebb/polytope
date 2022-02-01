@@ -24,11 +24,14 @@ namespace llvm {
 		bool IsPerfectNest(Loop& L, LoopInfo& LI, ScalarEvolution& SE);
 		bool IsAffineLoop(Loop& L, LoopStandardAnalysisResults& AR);
 		bool RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR);
-		int GetConstantInt(Value* V);
+		std::optional<Instruction*> FindInstr(unsigned int opCode, BasicBlock* basicBlock);
+		int ValueToInt(Value* V);
+		Value* IntToValue(int n);
 		static void PrintValue(Value* V);
 		PreservedAnalyses run(Loop& L, LoopAnalysisManager& AM, LoopStandardAnalysisResults& AR, LPMUpdater& U);
 
 	private:
+		static llvm::LLVMContext ctx;
 		std::vector<IVInfo> IVList;
 		Loop* innerLoop;
 		Loop* outerLoop;
