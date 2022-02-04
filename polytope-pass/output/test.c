@@ -1,3 +1,4 @@
+#include <stdio.h>
 int j = 0;
 
 /* Imperfect loop */
@@ -14,17 +15,17 @@ int j = 0;
 //}
 
 /* Perfect loop */
-int bar(int N) {
-	for (int i = 0; i < 6; i++) {
-		for (int k = i; k < 2*i; k++) {
-			j += i;
-			if (N > 2) {
-				j -= k;
-			}
-		}
-	}
-	return j;
-}
+//int bar(int N) {
+//	for (int i = 0; i < 6; i++) {
+//		for (int k = 0; k < i * 2; k += 1) {
+//			j += i;
+////			if (N > 2) {
+////				j -= k;
+////			}
+//		}
+//	}
+//	return j;
+//}
 
 /* Imperfect loop */
 //int baz(int N) {
@@ -51,16 +52,31 @@ int bar(int N) {
 //	return j;
 //}
 
-//int arr(int N) {
-//	int A[] = {2, 3, 5, 7, 11};
-//	for (int i = 1; i < 4; i++) {
-//		A[i] = 7;
+int arr(int N) {
+	int A[][4] = {{1, 3, 5, 8},
+				  {4, 2, 2, 3},
+				  {5, 3, 1, 7}};
+	for (int i = 1; i < 3; ++i) {
+		for (int k = 1; k < 4; ++k) {
+			A[i][k] = A[i - 1][k] + A[i][k - 1] + A[i - 1][k - 1];
+		}
+	}
+	printf("(%d, %d)\n", A[2][2], A[1][1]);
+
+	return A[2][2];
+}
+
+//int func() {
+//	for (int i = 0; i < 4; i++) {
+//		for (int k = 0; k < 3; k++) {
+//			j++;
+//		}
 //	}
-//	return j;
+//	return 4;
 //}
 
 int main() {
 	int N = 10;
-	bar(N);
-	return bar(N);
+//	arr(N);
+	return arr(N);
 }

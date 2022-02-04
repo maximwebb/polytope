@@ -323,16 +323,22 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 
 	auto assignment = ExtractArrayAccesses(L, AR);
 	auto transformation = ComputeAffineTransformation(assignment);
-	auto T = transformation.value();
-//	std::vector<std::vector<int>> T = {{4, 2},
-//									   {1, 3}};
+//	auto T = transformation.value();
+	std::vector<std::vector<int>> T = {{1, 1},
+									   {0, 2}};
 	auto H = IntegerSolver::HermiteNormal(T);
 
 	auto outerBounds = outerLoop->getBounds(AR.SE).getValue();
 	auto innerBounds = innerLoop->getBounds(AR.SE).getValue();
 
+	Module* M = L.getHeader()->getModule();
 	auto Int32Ty = outerLoop->getInductionVariable(AR.SE)->getType();
 	auto FloatTy = Type::getFloatTy(outerLoop->getHeader()->getContext());
+	std::vector<Type*> IntTypes(2, Int32Ty);
+	FunctionType* FTMin = FunctionType::get(Int32Ty, IntTypes, false);
+	FunctionType* FTMax = FunctionType::get(Int32Ty, IntTypes, false);
+	Function* minFunc = Function::Create(FTMin, Function::ExternalLinkage, "llvm.smin.i32", M);
+	Function* maxFunc = Function::Create(FTMax, Function::ExternalLinkage, "llvm.smax.i32", M);
 
 	/* Extract redundant IV instructions */
 	auto oldOuterIV = outerLoop->getInductionVariable(AR.SE);
@@ -362,7 +368,7 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	auto outerUpperBound = builder.CreateAdd(
 			builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getFinalIVValue()),
 			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getFinalIVValue()), "p.upper");
-	auto outerComp = builder.CreateCmp(CmpInst::ICMP_NE, outerIncrement, outerUpperBound);
+	auto outerComp = builder.CreateCmp(CmpInst::ICMP_SLE, outerIncrement, outerUpperBound);
 	auto outerBranch = builder.CreateCondBr(outerComp, outerLoop->getHeader(), outerLoop->getExitBlock());
 
 	/* Determine values for inner loop bounds */
@@ -372,48 +378,28 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getInitialIVValue()), "l1");
 
 	auto l1Ceil = builder.CreateAdd(
-		builder.CreateCast(
-			Instruction::FPToSI,
-			builder.CreateMaximum(
-				builder.CreateCast(
-					Instruction::SIToFP,
-					builder.CreateAdd(
-						builder.CreateMul(
-							IntToValue(T[1][0]),
-							builder.CreateSDiv(l1, IntToValue(T[0][0]))
-						),
-						builder.CreateCast(
-							Instruction::FPToSI,
-							builder.CreateMinimum(
-								builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l1, IntToValue(T[0][0])), FloatTy),
-								builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
-							),
-							Int32Ty
-						)
-					),
-					FloatTy
+		builder.CreateCall(maxFunc, {
+			builder.CreateAdd(
+				builder.CreateMul(
+					IntToValue(T[1][0]),
+					builder.CreateSDiv(l1, IntToValue(T[0][0]))
 				),
-				builder.CreateCast(
-					Instruction::SIToFP,
-					builder.CreateAdd(
-						builder.CreateMul(
-							IntToValue(T[1][1]),
-							builder.CreateSDiv(l1, IntToValue(T[0][1]))
-						),
-						builder.CreateCast(
-							Instruction::FPToSI,
-							builder.CreateMinimum(
-								builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l1, IntToValue(T[0][1])), FloatTy),
-								builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
-							),
-							Int32Ty
-						)
-					),
-					FloatTy
-				)
+				builder.CreateCall(minFunc, {
+					builder.CreateSRem(l1, IntToValue(T[0][0])),
+					IntToValue(1)
+				})
 			),
-			Int32Ty
-		),
+			(T[0][1] == 0) ? IntToValue(INT_MIN) : builder.CreateAdd(
+				builder.CreateMul(
+					IntToValue(T[1][1]),
+					builder.CreateSDiv(l1, IntToValue(T[0][1]))
+				),
+				builder.CreateCall(minFunc, {
+					builder.CreateSRem(l1, IntToValue(T[0][1])),
+					IntToValue(1)
+				})
+			)
+		}),
 		builder.CreateAdd(
 			builder.CreateMul(IntToValue(T[1][0]), &outerBounds.getFinalIVValue()),
 			builder.CreateMul(IntToValue(T[1][1]), &innerBounds.getInitialIVValue())
@@ -427,52 +413,32 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 
 	/* Upper bound for inner loop */
 	auto innerUpperBound = builder.CreateAdd(
-			builder.CreateCast(
-				Instruction::FPToSI,
-				builder.CreateMinimum(
-					builder.CreateCast(
-						Instruction::SIToFP,
-						builder.CreateAdd(
-							builder.CreateMul(
-								IntToValue(T[1][0]),
-								builder.CreateSDiv(l3, IntToValue(T[0][0]))
-							),
-							builder.CreateCast(
-								Instruction::FPToSI,
-								builder.CreateMinimum(
-									builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l3, IntToValue(T[0][0])), FloatTy),
-									builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
-								),
-								Int32Ty
-							)
-						),
-						FloatTy
+			builder.CreateCall(minFunc, {
+				builder.CreateAdd(
+					builder.CreateMul(
+						IntToValue(T[1][0]),
+						builder.CreateSDiv(l3, IntToValue(T[0][0]))
 					),
-					builder.CreateCast(
-						Instruction::SIToFP,
-						builder.CreateAdd(
-							builder.CreateMul(
-								IntToValue(T[1][1]),
-								builder.CreateSDiv(l3, IntToValue(T[0][1]))
-							),
-							builder.CreateCast(
-								Instruction::FPToSI,
-								builder.CreateMinimum(
-									builder.CreateCast(Instruction::SIToFP, builder.CreateSRem(l3, IntToValue(T[0][1])), FloatTy),
-									builder.CreateCast(Instruction::SIToFP, IntToValue(1), FloatTy)
-								),
-								Int32Ty
-							)
-						),
-						FloatTy
-					)
+					builder.CreateCall(minFunc, {
+						builder.CreateSRem(l3, IntToValue(T[0][0])),
+						IntToValue(1)
+					})
 				),
-		   	Int32Ty
-		   ),
-		builder.CreateAdd(
-			builder.CreateMul(IntToValue(T[1][0]), &outerBounds.getInitialIVValue()),
-			builder.CreateMul(IntToValue(T[1][1]), &innerBounds.getFinalIVValue())
-		),
+				(T[0][1] == 0) ? IntToValue(MAX_INT) : builder.CreateAdd(
+					builder.CreateMul(
+						IntToValue(T[1][1]),
+						builder.CreateSDiv(l3, IntToValue(T[0][1]))
+					),
+					builder.CreateCall(minFunc, {
+						builder.CreateSRem(l3, IntToValue(T[0][1])),
+						IntToValue(1)
+					})
+				)
+			}),
+			builder.CreateAdd(
+				builder.CreateMul(IntToValue(T[1][0]), &outerBounds.getInitialIVValue()),
+				builder.CreateMul(IntToValue(T[1][1]), &innerBounds.getFinalIVValue())
+			),
 		"q.upper"
 	);
 
@@ -528,7 +494,7 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	innerIV->addIncoming(innerLowerBound, outerLoop->getHeader());
 	innerIV->addIncoming(innerIncrement, innerLoop->getLoopLatch());
 
-	auto innerComp = builder.CreateCmp(CmpInst::ICMP_NE, innerIncrement, innerUpperBound);
+	auto innerComp = builder.CreateCmp(CmpInst::ICMP_SLE, innerIncrement, innerUpperBound);
 	auto innerBranch = builder.CreateCondBr(innerComp, innerLoop->getHeader(), innerLoop->getExitBlock());
 
 
@@ -542,7 +508,8 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	oldOuterBranch->eraseFromParent();
 	oldInnerBranch->eraseFromParent();
 
-	return PreservedAnalyses::all();
+
+	return PreservedAnalyses::none();
 }
 
 std::optional<Instruction*> PolytopePass::FindInstr(unsigned int opCode, BasicBlock* basicBlock) {
