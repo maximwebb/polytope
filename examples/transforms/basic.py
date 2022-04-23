@@ -171,19 +171,19 @@ def fast_func7(arr: List[List[float]]) -> List[List[float]]:
     s = set()
     # T = (p r)
     #     (q t)
-    p = 3
-    q = 3
-    r = 2
-    t = 4
+    p = 1
+    q = 1
+    r = 0
+    t = 1
     det = p * t - r * q
     H = hnf([[p, r], [q, t]])
     for i in range(p * a1 + r * a2, p * (b1 - 1) + r * (b2 - 1) + 1, H[0][0]):
         l1 = i - p*(b1-1) - r*a2
         l1_ceil = max(q*(l1//p) + (l1 % p > 0), t*(l1//r) + (l1 % r > 0)) + q*(b1-1) + t*a2
         l3 = i - p*a1 - r*(b2-1)
+        l3_ceil = min(q*(l3//p) + (l3 % p > 0), t*(l3//r) + (l3 % r > 0)) + q*a1 + t*(b2-1) + 1
         offset = (H[1][0] * (i//H[0][0]) - l1_ceil) % H[1][1]
-        for j in range(l1_ceil + offset,
-                       min(q*(l3//p) + (l3 % p > 0), t*(l3//r) + (l3 % r > 0)) + q*a1 + t*(b2-1) + 1, H[1][1]):
+        for j in range(l1_ceil + offset, l3_ceil, H[1][1]):
             i_new = (t * i - r * j) // det
             j_new = (p * j - q * i) // det
             s.add((i_new, j_new))

@@ -4,6 +4,7 @@ from tkinter import ttk
 
 width = 20
 
+
 class Graph:
     def __init__(self, w=None, h=None, a1=None, a2=None):
         self.V = []
@@ -26,13 +27,13 @@ class Graph:
         self.E.append((u, v))
 
 
-def gen_dep_graph(n, deps):
-    g = Graph(n)
+def gen_dep_graph(a1, a2, b1, b2, deps):
+    g = Graph((b1 - a1), (b2 - a2), a1, a2)
     for f in deps:
-        for i in range(n):
-            for j in range(n):
+        for i in range(a1, b1):
+            for j in range(a2, b2):
                 v_i, v_j = f(i, j)
-                if 0 <= v_i < n and 0 <= v_j < n:
+                if a1 <= v_i <= b1 and a2 <= v_j <= b2:
                     g.add_edge((v_i, v_j), (i, j))
     return g
 
@@ -45,6 +46,8 @@ def gen_graph(a1, a2, b1, b2):
 def transform_graph(T, g):
     g1 = Graph()
     g1.V = [(T[0][0] * x + T[0][1] * y, T[1][0] * x + T[1][1] * y) for (x, y) in g.V]
+    g1.E = [((T[0][0] * x1 + T[0][1] * y1, T[1][0] * x1 + T[1][1] * y1),
+             (T[0][0] * x2 + T[0][1] * y2, T[1][0] * x2 + T[1][1] * y2))for ((x1, y1), (x2, y2)) in g.E]
     return g1
 
 
@@ -60,16 +63,18 @@ class Canvas:
         self.c = tkinter.Canvas(self.root, bg="white", height=self.height, width=self.width)
 
         # Create axes/labels/gridlines
-        l1 = self.c.create_line(*self.convert_point(0, 0), *self.convert_point(0, self.n), arrow=tkinter.LAST)
-        l2 = self.c.create_line(*self.convert_point(0, 0), *self.convert_point(self.n, 0), arrow=tkinter.LAST)
         for i in range(self.n):
-            x_label = self.convert_point(i, -0.5)
-            y_label = self.convert_point(-0.5, i)
+            x_label = self.convert_point(i, -0.2)
+            y_label = self.convert_point(-0.2, i)
             self.c.create_text(*x_label, text=f"{i}")
             self.c.create_text(*y_label, text=f"{i}")
 
             self.c.create_line(*self.convert_point(i, 0), *self.convert_point(i, self.n), fill='#e8e8e8')
             self.c.create_line(*self.convert_point(0, i), *self.convert_point(self.n, i), fill='#e8e8e8')
+        l1 = self.c.create_line(*self.convert_point(0, 0), *self.convert_point(0, self.n), arrow=tkinter.LAST)
+        l2 = self.c.create_line(*self.convert_point(0, 0), *self.convert_point(self.n, 0), arrow=tkinter.LAST)
+        self.c.create_text(*self.convert_point(self.n, -0.2), text="x")
+        self.c.create_text(*self.convert_point(-0.2, self.n), text="y")
 
     def set_graph(self, g):
         self.c.delete("point")
@@ -77,11 +82,10 @@ class Canvas:
         self.g = g
         if self.g_init is None:
             self.g_init = g
-        for v in g.V:
-            self.add_point(v)
-
         for (u, v) in g.E:
             self.add_arrow(u, v)
+        for v in g.V:
+            self.add_point(v)
 
     def convert_point(self, x, y):
         x = width + x * width
@@ -93,7 +97,7 @@ class Canvas:
         x, y = v
         x, y = self.convert_point(x, y)
 
-        l = self.c.create_oval(x - w, y - w, x + w, y + w, fill="red", tags="point")
+        l = self.c.create_oval(x - w, y - w, x + w, y + w, fill="#2196F3", tags="point")
 
     def add_arrow(self, u, v):
         x1, y1 = u
@@ -127,11 +131,11 @@ def get_transform():
 
 def plot_graph():
     root = tkinter.Tk()
-    c = Canvas(41)
+    c = Canvas(30)
 
     # k = 4
-    # g = gen_dep_graph(10, [lambda i, j: (i, k), lambda i, j: (k, j)])
-    g = gen_graph(1, 1, 4, 4)
+    g = gen_dep_graph(1, 1, 6, 8, [lambda i, j: (i-1, j), lambda i, j: (i, j-1)])
+    # g = gen_graph(1, 1, 4, 3)
     root.withdraw()
 
     c.set_graph(g)

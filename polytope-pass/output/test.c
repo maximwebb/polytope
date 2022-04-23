@@ -56,12 +56,20 @@ int arr(int N) {
 	int A[][4] = {{1, 3, 5, 8},
 				  {4, 2, 2, 3},
 				  {5, 3, 1, 7}};
-	for (int i = 1; i < 3; ++i) {
-		for (int k = 1; k < 4; ++k) {
-			A[i][k] = A[i - 1][k] + A[i][k - 1] + A[i - 1][k - 1];
+	for (int i = 1; i < N; ++i) {
+		for (int k = 1; k < N+1; ++k) {
+			A[i][k] = A[i - 1][k] + A[i][k - 1];
 		}
 	}
-	printf("(%d, %d)\n", A[2][2], A[1][1]);
+
+
+	for (int i = 1; i < 3; ++i) {
+		for (int k = 1; k < 4; ++k) {
+			printf("%d, ", A[i][k]);
+		}
+		printf("\n");
+	}
+//	printf("%d, %d", A[1][1], A[2][2]);
 
 	return A[2][2];
 }
@@ -76,7 +84,7 @@ int arr(int N) {
 //}
 
 int main() {
-	int N = 10;
+	int N = 3;
 //	arr(N);
 	return arr(N);
 }

@@ -159,14 +159,16 @@ PolytopePass::GetAffineValue(Value* V, const std::vector<int>& Transform, const 
 /* Verifies that induction variables and array accesses are affine functions */
 /* This will initially only check for a subset of affine functions, eg. constant bounds */
 bool PolytopePass::IsAffineLoop(Loop& L, LoopStandardAnalysisResults& AR) {
-	std::vector<int> InitTransform(IVList.size() + 1, 0);
-	std::vector<int> FinalTransform(IVList.size() + 1, 0);
+//	std::vector<int> InitTransform(IVList.size() + 1, 0);
+//	std::vector<int> FinalTransform(IVList.size() + 1, 0);
 	for (auto& IV: IVList) {
-		auto res1 = GetAffineValue(IV.init, InitTransform);
+		auto res1 = outerLoop->isLoopInvariant(IV.init);
+//		auto res1 = GetAffineValue(IV.init, InitTransform);
 		if (!res1) {
 			return false;
 		}
-		auto res2 = GetAffineValue(IV.final, FinalTransform);
+		auto res2 = innerLoop->isLoopInvariant(IV.final);
+//		auto res2 = GetAffineValue(IV.final, FinalTransform);
 		if (!res2) {
 			return false;
 		}
@@ -322,6 +324,10 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	}
 
 	auto assignment = ExtractArrayAccesses(L, AR);
+	/* TODO: Move to analysis */
+	if (assignment.writeAccess.empty()) {
+		return PreservedAnalyses::all();
+	}
 	auto transformation = ComputeAffineTransformation(assignment);
 //	auto T = transformation.value();
 	std::vector<std::vector<int>> T = {{1, 1},
@@ -346,8 +352,10 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	auto oldOuterComparison = outerLoop->getLatchCmpInst();
 	auto oldInnerComparison = innerLoop->getLatchCmpInst();
 	/* Retrieve increment instructions by analysing comparison */
-	auto oldOuterIncrement = cast<Instruction>(oldOuterComparison->getOperand(0));
-	auto oldInnerIncrement = cast<Instruction>(oldInnerComparison->getOperand(0));
+	auto oldOuterIncrement = cast<Instruction>(oldOuterIV->getIncomingValueForBlock(outerLoop->getLoopLatch()));
+	auto oldInnerIncrement = cast<Instruction>(oldInnerIV->getIncomingValueForBlock(innerLoop->getLoopLatch()));
+//	auto oldOuterIncrement = cast<Instruction>(oldOuterIV->getOperand(1));
+//	auto oldInnerIncrement = cast<Instruction>(oldInnerIV->getOperand(1));
 	auto oldOuterBranch = FindInstr(Instruction::Br, outerLoop->getLoopLatch()).value();
 	auto oldInnerBranch = FindInstr(Instruction::Br, innerLoop->getLoopLatch()).value();
 
@@ -372,7 +380,8 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	auto outerBranch = builder.CreateCondBr(outerComp, outerLoop->getHeader(), outerLoop->getExitBlock());
 
 	/* Determine values for inner loop bounds */
-	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
+//	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
+	builder.SetInsertPoint(innerLoop->getLoopPreheader()->getTerminator());
 	auto l1 = builder.CreateSub(
 			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getFinalIVValue())),
 			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getInitialIVValue()), "l1");
@@ -455,7 +464,8 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	);
 
 	/* Update inner loop header */
-	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
+//	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
+	builder.SetInsertPoint(innerLoop->getLoopPreheader()->getTerminator());
 	auto innerLowerBound = builder.CreateAdd(l1Ceil, offset, "q.lower");
 	builder.SetInsertPoint(innerLoop->getHeader()->getFirstNonPHI());
 	auto innerIV = builder.CreatePHI(Int32Ty, 2, "q");
@@ -491,7 +501,8 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	/* Update inner loop latch */
 	builder.SetInsertPoint(innerLoop->getLoopLatch()->getTerminator());
 	auto innerIncrement = builder.CreateAdd(innerIV, IntToValue(H[1][1]), "q.inc");
-	innerIV->addIncoming(innerLowerBound, outerLoop->getHeader());
+//	innerIV->addIncoming(innerLowerBound, outerLoop->getHeader());
+	innerIV->addIncoming(innerLowerBound, innerLoop->getLoopPreheader());
 	innerIV->addIncoming(innerIncrement, innerLoop->getLoopLatch());
 
 	auto innerComp = builder.CreateCmp(CmpInst::ICMP_SLE, innerIncrement, innerUpperBound);
@@ -501,13 +512,18 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	/* Clean up old induction variables */
 	oldOuterIV->replaceAllUsesWith(iNew);
 	oldInnerIV->replaceAllUsesWith(jNew);
-	oldOuterIncrement->eraseFromParent();
-	oldInnerIncrement->eraseFromParent();
-	oldOuterComparison->eraseFromParent();
-	oldInnerComparison->eraseFromParent();
-	oldOuterBranch->eraseFromParent();
-	oldInnerBranch->eraseFromParent();
 
+	oldOuterIV->eraseFromParent();
+	oldOuterIncrement->eraseFromParent();
+	oldOuterBranch->eraseFromParent();
+	oldOuterComparison->eraseFromParent();
+
+	oldInnerIV->eraseFromParent();
+	oldInnerIncrement->eraseFromParent();
+	oldInnerBranch->eraseFromParent();
+	oldInnerComparison->eraseFromParent();
+
+	dbgs() << "Performed polytope optimisation\n";
 
 	return PreservedAnalyses::none();
 }
