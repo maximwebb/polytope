@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <utility>
+#include <stdexcept>
 
 struct SNF {
 	std::vector<std::vector<int>> L;

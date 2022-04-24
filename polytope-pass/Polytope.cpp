@@ -16,7 +16,6 @@
 using namespace llvm;
 
 bool PolytopePass::IsPerfectNest(Loop& L, LoopInfo& LI, ScalarEvolution& SE) {
-	// Will have to be changed for handing cases like for (int j = i; ...)
 	PHINode* IV = L.getInductionVariable(SE);
 	if (!IV) {
 		return false;
@@ -45,72 +44,71 @@ bool PolytopePass::IsPerfectNest(Loop& L, LoopInfo& LI, ScalarEvolution& SE) {
 }
 
 /* Recursively test if a value is an affine function of induction variables */
-std::optional<std::vector<int>>
-PolytopePass::GetAffineValue(Value* V, const std::vector<int>& Transform, const std::vector<Value*>& Visited = {},
-							 int scale = 1) {
-	/* Test for recursively defined variable in IR */
-//	if (std::find(Visited.begin(), Visited.end(), V) != Visited.end()) {
-//		return true;
-//	}
+std::optional<std::vector<int>> PolytopePass::GetValueIfAffine(Value* V) {
 	if (isa<Constant>(V)) {
-		std::vector<int> NewTransform;
-		NewTransform.insert(NewTransform.begin(), Transform.begin(), Transform.end());
+		std::vector<int> res(IVList.size() + 1, 0);
 		auto k = dyn_cast<ConstantInt>(V);
-		NewTransform[NewTransform.size() - 1] = k->getSExtValue() * scale;
-		return NewTransform;
+		res[IVList.size()] = k->getSExtValue();
+		return res;
 	}
 	/* Test if the value is an induction variable */
 	auto it = std::find_if(IVList.begin(), IVList.end(), [V](IVInfo& info) { return info.IV == V; });
 	if (it != IVList.end()) {
-		std::vector<int> NewTransform;
-		NewTransform.insert(NewTransform.begin(), Transform.begin(), Transform.end());
+		std::vector<int> res(IVList.size() + 1, 0);
 		unsigned index = it - IVList.begin();
-		NewTransform[index] = scale;
-		return NewTransform;
+		res[index] = 1;
+		return res;
 	}
 	if (isa<AddOperator>(V)) {
-		auto* AddInstr = dyn_cast<AddOperator>(V);
-		auto Fst = GetAffineValue(AddInstr->getOperand(0), Transform, Visited, scale);
-		auto Snd = GetAffineValue(AddInstr->getOperand(1), Transform, Visited, scale);
-		if (Fst && Snd) {
-			std::transform(Fst->begin(), Fst->end(), Snd->begin(), Fst->begin(), std::plus<>());
-			return Fst;
+		auto* addInstr = dyn_cast<AddOperator>(V);
+		auto fst = GetValueIfAffine(addInstr->getOperand(0));
+		auto snd = GetValueIfAffine(addInstr->getOperand(1));
+		if (fst && snd) {
+			std::transform(fst->begin(), fst->end(), snd->begin(), fst->begin(), std::plus<>());
+			return fst;
 		}
 	}
 	if (isa<SubOperator>(V)) {
-		auto* SubInstr = dyn_cast<SubOperator>(V);
-		auto Fst = GetAffineValue(SubInstr->getOperand(0), Transform, Visited, scale);
-		auto Snd = GetAffineValue(SubInstr->getOperand(1), Transform, Visited, scale);
-		if (Fst && Snd) {
-			std::transform(Fst->begin(), Fst->end(), Snd->begin(), Fst->begin(), std::minus<>());
-			return Fst;
+		auto* subInstr = dyn_cast<SubOperator>(V);
+		auto fst = GetValueIfAffine(subInstr->getOperand(0));
+		auto snd = GetValueIfAffine(subInstr->getOperand(1));
+		if (fst && snd) {
+			std::transform(fst->begin(), fst->end(), snd->begin(), fst->begin(), std::minus<>());
+			return fst;
 		}
 	}
 	if (isa<MulOperator>(V)) {
-		auto* MulInstr = dyn_cast<MulOperator>(V);
-		if (isa<Constant>(MulInstr->getOperand(0))) {
-			return GetAffineValue(MulInstr->getOperand(1), Transform, Visited,
-								  scale * ValueToInt(MulInstr->getOperand(0)));
-		} else if (isa<Constant>(MulInstr->getOperand(1))) {
-			return GetAffineValue(MulInstr->getOperand(0), Transform, Visited,
-								  scale * ValueToInt(MulInstr->getOperand(1)));
+		auto* mulInstr = dyn_cast<MulOperator>(V);
+		std::optional<std::vector<int>> res = {};
+		/* Ensure at least one of the two branches is a constant */
+		if (isa<Constant>(mulInstr->getOperand(0))) {
+			int scale = ValueToInt(mulInstr->getOperand(0));
+			res = GetValueIfAffine(mulInstr->getOperand(1));
+			std::transform(res->begin(), res->end(), res->begin(), [scale](int& x){ return x * scale; });
+		} else if (isa<Constant>(mulInstr->getOperand(1))) {
+			int scale = ValueToInt(mulInstr->getOperand(1));
+			res = GetValueIfAffine(mulInstr->getOperand(0));
+			std::transform(res->begin(), res->end(), res->begin(), [scale](int& x){ return x * scale; });
 		}
-		return {};
+		return res;
 	}
 	if (isa<ShlOperator>(V)) {
-		auto* ShlInstr = dyn_cast<ShlOperator>(V);
-		if (isa<Constant>(ShlInstr->getOperand(1))) {
-			auto Multiplier = 1 << ValueToInt(ShlInstr->getOperand(1));
-			return GetAffineValue(ShlInstr->getOperand(0), Transform, Visited, scale * Multiplier);
+		auto* shlInstr = dyn_cast<ShlOperator>(V);
+		if (isa<Constant>(shlInstr->getOperand(1))) {
+			int scale = 1 << ValueToInt(shlInstr->getOperand(1));
+			auto res = GetValueIfAffine(shlInstr->getOperand(0));
+			std::transform(res->begin(), res->end(), res->begin(), [scale](int& x){ return x * scale; });
+			return res;
 		}
 		return {};
 	}
 	/* Exclusively for testing XOR */
 	if (isa<BinaryOperator>(V)) {
-		auto* BinInstr = dyn_cast<BinaryOperator>(V);
+		auto* binInstr = dyn_cast<BinaryOperator>(V);
 		/* The instruction %1 = xor k -1 simplifies to %1 = -k - 1 */
-		if (BinInstr->getOpcode() == Instruction::Xor && ValueToInt(BinInstr->getOperand(1)) == -1) {
-			auto res = GetAffineValue(BinInstr->getOperand(0), Transform, Visited, -scale);
+		if (binInstr->getOpcode() == Instruction::Xor && ValueToInt(binInstr->getOperand(1)) == -1) {
+			auto res = GetValueIfAffine(binInstr->getOperand(0));
+			std::transform(res->begin(), res->end(), res->begin(), std::negate<>());
 			if (res) {
 				res.value().back() -= 1;
 				return res;
@@ -119,67 +117,39 @@ PolytopePass::GetAffineValue(Value* V, const std::vector<int>& Transform, const 
 		return {};
 	}
 	if (isa<CallInst>(V)) {
-		auto* FuncInstr = dyn_cast<CallInst>(V);
-		if (FuncInstr->getCalledFunction()->getName() == "llvm.smax.i32") {
-			auto Fst = GetAffineValue(FuncInstr->getArgOperand(0), Transform, Visited, scale);
-			auto Snd = GetAffineValue(FuncInstr->getArgOperand(1), Transform, Visited, scale);
-			if (Fst && Snd) {
-				std::transform(Fst->begin(), Fst->end(), Snd->begin(), Fst->begin(),
+		auto* funcInstr = dyn_cast<CallInst>(V);
+		if (funcInstr->getCalledFunction()->getName() == "llvm.smax.i32") {
+			auto fst = GetValueIfAffine(funcInstr->getArgOperand(0));
+			auto snd = GetValueIfAffine(funcInstr->getArgOperand(1));
+			if (fst && snd) {
+				std::transform(fst->begin(), fst->end(), snd->begin(), fst->begin(),
 							   [](int m, int n) { return m > n ? m : n; });
-				return Fst;
+				return fst;
 			}
 		} else {
 			return {};
 		}
 	}
 	if (isa<CastInst>(V)) {
-		auto* CastInstr = dyn_cast<CastInst>(V);
-		return GetAffineValue(CastInstr->getOperand(0), Transform, Visited, scale);
+		auto* castInstr = dyn_cast<CastInst>(V);
+		return GetValueIfAffine(castInstr->getOperand(0));
 	}
-
-	/* Code may be redundant */
-//	if (isa<PHINode>(V)) {
-//		std::optional<std::vector<int>> NewTransform;
-//		auto* PhiInstr = dyn_cast<PHINode>(V);
-//		std::vector<Value*> NewVisited;
-//		NewVisited.insert(NewVisited.begin(), Visited.begin(), Visited.end());
-//		NewVisited.push_back(PhiInstr);
-//		for (auto& Op: PhiInstr->operands()) {
-//			NewTransform = GetAffineValue(Op.get(), Transform, NewVisited);
-//			if (!NewTransform) {
-//				return {};
-//			}
-//		}
-//		dbgs() << "PHI Node\n";
-//		return NewTransform;
-//	}
 	return {};
 }
 
 /* Verifies that induction variables and array accesses are affine functions */
-/* This will initially only check for a subset of affine functions, eg. constant bounds */
-bool PolytopePass::IsAffineLoop(Loop& L, LoopStandardAnalysisResults& AR) {
-//	std::vector<int> InitTransform(IVList.size() + 1, 0);
-//	std::vector<int> FinalTransform(IVList.size() + 1, 0);
+bool PolytopePass::HasInvariantBounds() {
 	for (auto& IV: IVList) {
-		auto res1 = outerLoop->isLoopInvariant(IV.init);
-//		auto res1 = GetAffineValue(IV.init, InitTransform);
-		if (!res1) {
-			return false;
-		}
-		auto res2 = innerLoop->isLoopInvariant(IV.final);
-//		auto res2 = GetAffineValue(IV.final, FinalTransform);
-		if (!res2) {
+		if (!(outerLoop->isLoopInvariant(IV.init) && outerLoop->isLoopInvariant(IV.final))) {
 			return false;
 		}
 	}
-
 	return true;
 }
 
-bool PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
+std::optional<ArrayAssignment> PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
 	if (!IsPerfectNest(L, AR.LI, AR.SE)) {
-		return false;
+		return {};
 	}
 	IVInfo OuterIV;
 	IVInfo InnerIV;
@@ -187,7 +157,7 @@ bool PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
 	OuterIV.loop = &L;
 	auto* IL = L.getSubLoops().at(0);
 	if (IL == nullptr) {
-		return false;
+		return {};
 	}
 	InnerIV.loop = IL;
 	outerLoop = &L;
@@ -200,7 +170,7 @@ bool PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
 	auto OuterBounds = OuterIV.loop->getBounds(AR.SE);
 
 	if (!InnerBounds.hasValue() || !OuterBounds.hasValue()) {
-		return false;
+		return {};
 	}
 
 	InnerIV.init = &InnerBounds->getInitialIVValue();
@@ -211,30 +181,30 @@ bool PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
 	IVList.push_back(OuterIV);
 	IVList.push_back(InnerIV);
 
+	auto assignment = GetArrayAccessesIfAffine();
 
-	if (!IsAffineLoop(L, AR)) {
+	if (!HasInvariantBounds() || !assignment || assignment->writeAccess.empty()) {
 		dbgs() << "Not affine\n";
-		return false;
-	} else {
-		dbgs() << "Affine\n";
+		return {};
 	}
-	return true;
+	dbgs() << "Affine\n";
+	return assignment;
 }
 
-ArrayAssignment PolytopePass::ExtractArrayAccesses(Loop& L, LoopStandardAnalysisResults& AR) {
+std::optional<ArrayAssignment> PolytopePass::GetArrayAccessesIfAffine() {
 	std::vector<std::vector<std::vector<int>>> readVectors;
 	/* In the future, analysis pass will ensure there is precisely one write, and perform this extraction */
 	std::vector<std::vector<int>> writeVector;
-	for (auto& Instr: *(innerLoop->getHeader())) {
+	for (auto& instr: *(innerLoop->getHeader())) {
 		/* Extract array access index functions for all array read/writes */
-		if (isa<StoreInst>(Instr) || isa<LoadInst>(Instr)) {
-			bool isWrite = isa<StoreInst>(Instr);
+		if (isa<StoreInst>(instr) || isa<LoadInst>(instr)) {
+			bool isWrite = isa<StoreInst>(instr);
 			std::vector<int> T(IVList.size() + 1, 0);
-			auto I = Instr.getOperand(isWrite ? 1 : 0);
+			auto I = instr.getOperand(isWrite ? 1 : 0);
 			if (isa<GetElementPtrInst>(I)) {
 				auto GEPInstr = dyn_cast<GetElementPtrInst>(I);
-				auto v1 = GetAffineValue(GEPInstr->getOperand(2), T);
-				auto v2 = GetAffineValue(GEPInstr->getOperand(3), T);
+				auto v1 = GetValueIfAffine(GEPInstr->getOperand(2));
+				auto v2 = GetValueIfAffine(GEPInstr->getOperand(3));
 				if (v1 && v2) {
 					if (isWrite) {
 						writeVector.push_back(v1.value());
@@ -243,10 +213,12 @@ ArrayAssignment PolytopePass::ExtractArrayAccesses(Loop& L, LoopStandardAnalysis
 						readVectors.push_back({v1.value(), v2.value()});
 					}
 				}
+			} else {
+				return {};
 			}
 		}
 	}
-	return {writeVector, readVectors};
+	return ArrayAssignment(writeVector, readVectors);
 }
 
 ArrayAssignment
@@ -310,25 +282,19 @@ PolytopePass::ComputeAffineTransformation(const ArrayAssignment& assignment) {
 	}
 
 	unsigned dim = IVList.size();
-
 	auto generators = IntegerSolver::GetGenerators(dim);
-
 	return ComputeAffineTransformationInner(assignment, generators.first, generators.second,
 											IntegerSolver::IdentityMatrix(dim), 5);
 }
 
 
 PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStandardAnalysisResults& AR, LPMUpdater& U) {
-	if (!RunAnalysis(L, AR)) {
+	auto assignment = RunAnalysis(L, AR);
+	if (!assignment) {
 		return PreservedAnalyses::all();
 	}
 
-	auto assignment = ExtractArrayAccesses(L, AR);
-	/* TODO: Move to analysis */
-	if (assignment.writeAccess.empty()) {
-		return PreservedAnalyses::all();
-	}
-	auto transformation = ComputeAffineTransformation(assignment);
+	auto transformation = ComputeAffineTransformation(*assignment);
 //	auto T = transformation.value();
 	std::vector<std::vector<int>> T = {{1, 1},
 									   {0, 2}};
@@ -354,8 +320,6 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	/* Retrieve increment instructions by analysing comparison */
 	auto oldOuterIncrement = cast<Instruction>(oldOuterIV->getIncomingValueForBlock(outerLoop->getLoopLatch()));
 	auto oldInnerIncrement = cast<Instruction>(oldInnerIV->getIncomingValueForBlock(innerLoop->getLoopLatch()));
-//	auto oldOuterIncrement = cast<Instruction>(oldOuterIV->getOperand(1));
-//	auto oldInnerIncrement = cast<Instruction>(oldInnerIV->getOperand(1));
 	auto oldOuterBranch = FindInstr(Instruction::Br, outerLoop->getLoopLatch()).value();
 	auto oldInnerBranch = FindInstr(Instruction::Br, innerLoop->getLoopLatch()).value();
 
@@ -366,7 +330,6 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 			builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getInitialIVValue()),
 			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getInitialIVValue()), "p.lower");
 	auto outerIV = builder.CreatePHI(Int32Ty, 2, "p");
-//	auto iNew = builder.CreateAdd(outerIV, IntToValue(9), "i.new");
 
 	/* Update outer loop latch */
 	builder.SetInsertPoint(outerLoop->getLoopLatch()->getTerminator());
@@ -380,7 +343,6 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	auto outerBranch = builder.CreateCondBr(outerComp, outerLoop->getHeader(), outerLoop->getExitBlock());
 
 	/* Determine values for inner loop bounds */
-//	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
 	builder.SetInsertPoint(innerLoop->getLoopPreheader()->getTerminator());
 	auto l1 = builder.CreateSub(
 			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getFinalIVValue())),
@@ -464,7 +426,6 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	);
 
 	/* Update inner loop header */
-//	builder.SetInsertPoint(outerLoop->getHeader()->getTerminator());
 	builder.SetInsertPoint(innerLoop->getLoopPreheader()->getTerminator());
 	auto innerLowerBound = builder.CreateAdd(l1Ceil, offset, "q.lower");
 	builder.SetInsertPoint(innerLoop->getHeader()->getFirstNonPHI());
@@ -501,7 +462,6 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	/* Update inner loop latch */
 	builder.SetInsertPoint(innerLoop->getLoopLatch()->getTerminator());
 	auto innerIncrement = builder.CreateAdd(innerIV, IntToValue(H[1][1]), "q.inc");
-//	innerIV->addIncoming(innerLowerBound, outerLoop->getHeader());
 	innerIV->addIncoming(innerLowerBound, innerLoop->getLoopPreheader());
 	innerIV->addIncoming(innerIncrement, innerLoop->getLoopLatch());
 

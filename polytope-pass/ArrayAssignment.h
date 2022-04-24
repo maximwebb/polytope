@@ -17,8 +17,8 @@ struct EquationSystem {
  * and the list of array reads, and determine if it exhibits loop carrier dependencies. */
 class ArrayAssignment {
 public:
-	const std::vector<std::vector<int>> writeAccess;
-	const std::vector<std::vector<std::vector<int>>> readAccesses;
+	std::vector<std::vector<std::vector<int>>> readAccesses;
+	std::vector<std::vector<int>> writeAccess;
 
 	ArrayAssignment(std::vector<std::vector<int>> writeAccess,
 					std::vector<std::vector<std::vector<int>>> readAccesses) :
@@ -36,6 +36,7 @@ public:
 	}
 
 private:
+	/* Compute a set of equations where an integer solution represents a loop-carried dependency. */
 	std::vector<EquationSystem> ComputeEquations() const {
 		std::vector<EquationSystem> equationSystems;
 		for (auto& read: readAccesses) {
@@ -47,7 +48,7 @@ private:
 				std::vector<int> eq;
 				/* Ensure that outermost induction variable is fixed between iterations */
 				eq.push_back(writeVec.at(0) - readVec.at(0));
-				/* Insert remaining write induction variable coefficients into equation (but not the constant) */
+				/* Insert remaining write induction variable coefficients into equation, excluding the constant */
 				eq.insert(eq.begin() + 1, writeVec.begin() + 1, writeVec.end() - 1);
 				/* Insert remaining read induction variable coefficients. These are negated, as they were on the RHS of
 				 * the equation. */

@@ -22,8 +22,8 @@ namespace llvm {
 	class PolytopePass : public PassInfoMixin<PolytopePass> {
 	public:
 		bool IsPerfectNest(Loop& L, LoopInfo& LI, ScalarEvolution& SE);
-		bool IsAffineLoop(Loop& L, LoopStandardAnalysisResults& AR);
-		bool RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR);
+		bool HasInvariantBounds();
+		std::optional<ArrayAssignment> RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR);
 		std::optional<Instruction*> FindInstr(unsigned int opCode, BasicBlock* basicBlock);
 		int ValueToInt(Value* V);
 		Value* IntToValue(int n);
@@ -35,9 +35,8 @@ namespace llvm {
 		std::vector<IVInfo> IVList;
 		Loop* innerLoop;
 		Loop* outerLoop;
-		std::optional<std::vector<int>>
-		GetAffineValue(Value* V, const std::vector<int>& Transform, const std::vector<Value*>& Visited, int scale);
-		ArrayAssignment ExtractArrayAccesses(Loop& L, LoopStandardAnalysisResults& AR);
+		std::optional<std::vector<int>> GetValueIfAffine(Value* V);
+		std::optional<ArrayAssignment> GetArrayAccessesIfAffine();
 		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformation(const ArrayAssignment& assignment);
 		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformationInner(const ArrayAssignment& assignment,
 																					  const std::vector<std::vector<int>>& genA,
