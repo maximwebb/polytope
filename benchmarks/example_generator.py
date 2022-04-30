@@ -49,6 +49,7 @@ int main() {{
         }}
         printf("\\n");
     }}
+    free(A);
     return 0;
 }}
 """
@@ -93,3 +94,77 @@ int main() {{
             access_str.append(s)
 
         return "A" + "".join(access_str)
+
+
+class TestGenerator(IExampleGenerator):
+    def __init__(self, size: int):
+        self._size = size
+
+    def gen(self, n) -> List[str]:
+        random.seed(4)
+#         examples = [f"""#include <stdio.h>
+# #include <stdlib.h>
+# #define N {self._size}
+# #define M {self._size}
+# #define seed 7
+#
+#
+# int main() {{
+#     int (*A)[M] = malloc(sizeof(int[N][M]));
+#
+#     for (int i = 0; i < N; i++) {{
+#         for (int j = 0; j < N; j++) {{
+#             A[i][j] = (i + j*seed) % 4;
+#         }}
+#     }}
+#
+#     for (int i = 1; i < N; ++i) {{
+#         for (int j = 1; j < N; ++j) {{
+#             A[i][j] = A[i-1][j] + A[i][j-1];
+#         }}
+#     }}
+#
+#     for (int i = 0; i < N; ++i) {{
+#         for (int j = 0; j < N; ++j) {{
+#             printf("%d, ", A[i][j]);
+#         }}
+#         printf("\\n");
+#     }}
+#     return 0;
+# }}
+# """]
+        examples = [f"""#include <stdio.h>
+#include <stdlib.h>
+#define N {self._size}
+#define M {self._size}
+#define seed 7
+
+
+int main() {{
+    int (*A)[M] = malloc(sizeof(int[N][M]));
+
+    for (int i = 0; i < N; i++) {{
+        for (int j = 0; j < N; j++) {{
+            A[i][j] = (i + j*seed) % 4;
+        }}
+    }}
+
+    for (int i = 1; i < N; ++i) {{
+        for (int j = 1; j < N; ++j) {{
+            A[i][j] = A[i][j-1];
+        }}
+    }}
+    
+    for (int i = 0; i < 4; ++i) {{
+        for (int j = 0; j < 5; ++j) {{
+            printf("%d, ", A[i][j]);
+        }}
+        printf("\\n");
+    }}
+    
+    free(A);
+    return 0;
+}}
+"""]
+
+        return examples

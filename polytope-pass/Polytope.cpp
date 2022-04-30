@@ -148,6 +148,7 @@ bool PolytopePass::HasInvariantBounds() {
 }
 
 std::optional<ArrayAssignment> PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
+	IVList = {};
 	if (!IsPerfectNest(L, AR.LI, AR.SE)) {
 		return {};
 	}
@@ -183,7 +184,7 @@ std::optional<ArrayAssignment> PolytopePass::RunAnalysis(Loop& L, LoopStandardAn
 
 	auto assignment = GetArrayAccessesIfAffine();
 
-	if (!HasInvariantBounds() || !assignment || assignment->writeAccess.empty()) {
+	if (!HasInvariantBounds() || !assignment || assignment->writeAccess.empty() || assignment->readAccesses.empty()) {
 		dbgs() << "Not affine\n";
 		return {};
 	}
@@ -203,8 +204,9 @@ std::optional<ArrayAssignment> PolytopePass::GetArrayAccessesIfAffine() {
 			auto I = instr.getOperand(isWrite ? 1 : 0);
 			if (isa<GetElementPtrInst>(I)) {
 				auto GEPInstr = dyn_cast<GetElementPtrInst>(I);
-				auto v1 = GetValueIfAffine(GEPInstr->getOperand(2));
-				auto v2 = GetValueIfAffine(GEPInstr->getOperand(3));
+				auto size = GEPInstr->getNumOperands();
+				auto v1 = GetValueIfAffine(GEPInstr->getOperand(size-2));
+				auto v2 = GetValueIfAffine(GEPInstr->getOperand(size-1));
 				if (v1 && v2) {
 					if (isWrite) {
 						writeVector.push_back(v1.value());
@@ -260,7 +262,24 @@ PolytopePass::ComputeAffineTransformationInner(const ArrayAssignment& assignment
 											   int depth) {
 	auto transformedAssignment = TransformAssignment(assignment, transform);
 	if (!transformedAssignment.HasLoopCarrierDependencies()) {
-		return transform;
+		auto preservesDependencies = true;
+		std::vector<std::vector<int>> dep_vectors;
+		for (auto read : assignment.readAccesses) {
+			std::vector<int> vec = {assignment.writeAccess[0].back() - read[0].back(),
+									assignment.writeAccess[1].back() - read[1].back()};
+			auto transformedVec = IntegerSolver::LinearTransform(transform, vec);
+			for (int i = 0; i < vec.size(); i++) {
+				if ((vec[i]<0) != (transformedVec[i]<0)) {
+					preservesDependencies = false;
+				}
+			}
+			if (!preservesDependencies) {
+				break;
+			}
+		}
+		if (preservesDependencies) {
+			return transform;
+		}
 	}
 	if (depth == 0) {
 		return {};
@@ -269,10 +288,13 @@ PolytopePass::ComputeAffineTransformationInner(const ArrayAssignment& assignment
 
 	auto transform1 = ComputeAffineTransformationInner(assignment, genA, genB, IntegerSolver::Multiply(genA, transform),
 													   depth);
+	if (transform1) {
+		return transform1;
+	}
+
 	auto transform2 = ComputeAffineTransformationInner(assignment, genA, genB, IntegerSolver::Multiply(genB, transform),
 													   depth);
-
-	return transform1 ? transform1 : transform2;
+	return transform2;
 }
 
 std::optional<std::vector<std::vector<int>>>
@@ -280,11 +302,13 @@ PolytopePass::ComputeAffineTransformation(const ArrayAssignment& assignment) {
 	if (!assignment.HasLoopCarrierDependencies()) {
 		return {};
 	}
+	std::vector<std::vector<int>> T = {{1, 0},
+									   {0, 1}};
 
 	unsigned dim = IVList.size();
 	auto generators = IntegerSolver::GetGenerators(dim);
 	return ComputeAffineTransformationInner(assignment, generators.first, generators.second,
-											IntegerSolver::IdentityMatrix(dim), 5);
+											T, 7);
 }
 
 
@@ -295,10 +319,14 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	}
 
 	auto transformation = ComputeAffineTransformation(*assignment);
-//	auto T = transformation.value();
-	std::vector<std::vector<int>> T = {{1, 1},
-									   {0, 2}};
+	if (!transformation) {
+		return PreservedAnalyses::all();
+	}
+	auto T = transformation.value();
+//	std::vector<std::vector<int>> T = {{1, 1},
+//									   {1, 0}};
 	auto H = IntegerSolver::HermiteNormal(T);
+	auto det = T[0][0]*T[1][1] - T[1][0]*T[0][1];
 
 	auto outerBounds = outerLoop->getBounds(AR.SE).getValue();
 	auto innerBounds = innerLoop->getBounds(AR.SE).getValue();
@@ -323,12 +351,63 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	auto oldOuterBranch = FindInstr(Instruction::Br, outerLoop->getLoopLatch()).value();
 	auto oldInnerBranch = FindInstr(Instruction::Br, innerLoop->getLoopLatch()).value();
 
+	auto LL = std::make_tuple<>(&outerBounds.getInitialIVValue(), &innerBounds.getInitialIVValue());
+	auto LR = std::make_tuple<>(&outerBounds.getFinalIVValue(), &innerBounds.getInitialIVValue());
+	auto UL = std::make_tuple<>(&outerBounds.getInitialIVValue(), &innerBounds.getFinalIVValue());
+	auto UR = std::make_tuple<>(&outerBounds.getFinalIVValue(), &innerBounds.getFinalIVValue());
+
+	std::tuple<Value*, Value*> outerLBPoint;
+	std::tuple<Value*, Value*> outerUBPoint;
+	std::tuple<Value*, Value*> innerLBPoint;
+	std::tuple<Value*, Value*> innerUBPoint;
+	if (T[0][0] > 0 && T[0][1] > 0) {
+		outerLBPoint = LL;
+		outerUBPoint = UR;
+		if (det > 0) {
+			innerLBPoint = LR;
+			innerUBPoint = UL;
+		} else {
+			innerLBPoint = UL;
+			innerUBPoint = LR;
+		}
+	} else if (T[0][0] <= 0 && T[0][1] > 0) {
+		outerLBPoint = LR;
+		outerUBPoint = UL;
+		if (det > 0) {
+			innerLBPoint = UR;
+			innerUBPoint = LL;
+		} else {
+			innerLBPoint = LL;
+			innerUBPoint = UR;
+		}
+	} else if (T[0][0] > 0 && T[0][1] <= 0) {
+		outerLBPoint = UL;
+		outerUBPoint = LR;
+		if (det > 0) {
+			innerLBPoint = LL;
+			innerUBPoint = UR;
+		} else {
+			innerLBPoint = UR;
+			innerUBPoint = LL;
+		}
+	} else {
+		outerLBPoint = UR;
+		outerUBPoint = LL;
+		if (det > 0) {
+			innerLBPoint = UL;
+			innerUBPoint = LR;
+		} else {
+			innerLBPoint = LR;
+			innerUBPoint = UL;
+		}
+	}
+
 	/* Update outer loop header */
 	IRBuilder builder(outerLoop->getHeader()->getContext());
 	builder.SetInsertPoint(outerLoop->getHeader()->getFirstNonPHI());
 	auto outerLowerBound = builder.CreateAdd(
-			builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getInitialIVValue()),
-			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getInitialIVValue()), "p.lower");
+			builder.CreateMul(IntToValue(T[0][0]), std::get<0>(outerLBPoint)),
+			builder.CreateMul(IntToValue(T[0][1]), std::get<1>(outerLBPoint)), "p.lower");
 	auto outerIV = builder.CreatePHI(Int32Ty, 2, "p");
 
 	/* Update outer loop latch */
@@ -337,20 +416,22 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	outerIV->addIncoming(outerLowerBound, outerLoop->getLoopPreheader());
 	outerIV->addIncoming(outerIncrement, outerLoop->getLoopLatch());
 	auto outerUpperBound = builder.CreateAdd(
-			builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getFinalIVValue()),
-			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getFinalIVValue()), "p.upper");
+			builder.CreateMul(IntToValue(T[0][0]), std::get<0>(outerUBPoint)),
+			builder.CreateMul(IntToValue(T[0][1]), std::get<1>(outerUBPoint)), "p.upper");
 	auto outerComp = builder.CreateCmp(CmpInst::ICMP_SLE, outerIncrement, outerUpperBound);
 	auto outerBranch = builder.CreateCondBr(outerComp, outerLoop->getHeader(), outerLoop->getExitBlock());
 
 	/* Determine values for inner loop bounds */
 	builder.SetInsertPoint(innerLoop->getLoopPreheader()->getTerminator());
-	auto l1 = builder.CreateSub(
-			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getFinalIVValue())),
-			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getInitialIVValue()), "l1");
 
+	auto l1 = builder.CreateSub(
+			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), std::get<0>(innerLBPoint))),
+			builder.CreateMul(IntToValue(T[0][1]), std::get<1>(innerLBPoint)), "l1");
+
+	// TODO: Change the check for zero to remove the zero division entirely
 	auto l1Ceil = builder.CreateAdd(
 		builder.CreateCall(maxFunc, {
-			builder.CreateAdd(
+			(T[0][0] == 0) ? IntToValue(INT_MIN) : builder.CreateAdd(
 				builder.CreateMul(
 					IntToValue(T[1][0]),
 					builder.CreateSDiv(l1, IntToValue(T[0][0]))
@@ -372,20 +453,21 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 			)
 		}),
 		builder.CreateAdd(
-			builder.CreateMul(IntToValue(T[1][0]), &outerBounds.getFinalIVValue()),
-			builder.CreateMul(IntToValue(T[1][1]), &innerBounds.getInitialIVValue())
+			builder.CreateMul(IntToValue(T[1][0]), std::get<0>(innerLBPoint)),
+			builder.CreateMul(IntToValue(T[1][1]), std::get<1>(innerLBPoint))
 		),
 		"l1.ceil"
 	);
 
 	auto l3 = builder.CreateSub(
-			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), &outerBounds.getInitialIVValue())),
-			builder.CreateMul(IntToValue(T[0][1]), &innerBounds.getFinalIVValue()), "l3");
+			builder.CreateSub(outerIV, builder.CreateMul(IntToValue(T[0][0]), std::get<0>(innerUBPoint))),
+			builder.CreateMul(IntToValue(T[0][1]), std::get<1>(innerUBPoint)), "l3");
 
 	/* Upper bound for inner loop */
+	// TODO: Change the check for zero to remove the zero division entirely
 	auto innerUpperBound = builder.CreateAdd(
 			builder.CreateCall(minFunc, {
-				builder.CreateAdd(
+				(T[0][0] == 0) ? IntToValue(MAX_INT) :builder.CreateAdd(
 					builder.CreateMul(
 						IntToValue(T[1][0]),
 						builder.CreateSDiv(l3, IntToValue(T[0][0]))
@@ -407,8 +489,8 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 				)
 			}),
 			builder.CreateAdd(
-				builder.CreateMul(IntToValue(T[1][0]), &outerBounds.getInitialIVValue()),
-				builder.CreateMul(IntToValue(T[1][1]), &innerBounds.getFinalIVValue())
+				builder.CreateMul(IntToValue(T[1][0]), std::get<0>(innerUBPoint)),
+				builder.CreateMul(IntToValue(T[1][1]), std::get<1>(innerUBPoint))
 			),
 		"q.upper"
 	);
@@ -483,6 +565,12 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	oldInnerBranch->eraseFromParent();
 	oldInnerComparison->eraseFromParent();
 
+	addStringMetadataToLoop(innerLoop, "llvm.loop.parallel_accesses");
+	addStringMetadataToLoop(innerLoop, "llvm.mem.parallel_loop_access");
+	addStringMetadataToLoop(innerLoop, "llvm.loop.vectorize.enable");
+
+	auto boo = innerLoop->isAnnotatedParallel();
+
 	dbgs() << "Performed polytope optimisation\n";
 
 	return PreservedAnalyses::none();
@@ -516,6 +604,8 @@ void PolytopePass::PrintValue(Value* V) {
 		dbgs() << V->getName() << "\n";
 	}
 }
+
+
 
 llvm::PassPluginLibraryInfo getPolyLoopPluginInfo() {
 	return {LLVM_PLUGIN_API_VERSION, "PolyLoop", LLVM_VERSION_STRING,

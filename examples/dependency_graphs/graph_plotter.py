@@ -94,10 +94,10 @@ class Canvas:
 
     def add_point(self, v):
         w = 4
+        shift = 0
         x, y = v
         x, y = self.convert_point(x, y)
-
-        l = self.c.create_oval(x - w, y - w, x + w, y + w, fill="#2196F3", tags="point")
+        l = self.c.create_oval(x - w + shift, y - w - shift, x + w + shift, y + w - shift, fill="#2196F3", tags="point")
 
     def add_arrow(self, u, v):
         x1, y1 = u
@@ -134,7 +134,8 @@ def plot_graph():
     c = Canvas(30)
 
     # k = 4
-    g = gen_dep_graph(1, 1, 6, 8, [lambda i, j: (i-1, j), lambda i, j: (i, j-1)])
+    g = gen_dep_graph(0, 0, 7, 5, [lambda i, j: (i, j-1), lambda i, j: (i-1, j)])
+    # g = gen_dep_graph(0, 0, 7, 5, [lambda i, j: (i-1, j), lambda i, j: (i, j-1), lambda i, j: (i+1, j-1)])
     # g = gen_graph(1, 1, 4, 3)
     root.withdraw()
 
