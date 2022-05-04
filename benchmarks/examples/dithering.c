@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#define N 3000
-#define M 3000
+#define N 500
+#define M 500
 #define seed 7
 
 

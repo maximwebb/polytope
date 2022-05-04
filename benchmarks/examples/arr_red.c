@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#define N 3000
-#define M 3000
+#define N 500
+#define M 500
 #define seed 7
 
 
@@ -16,7 +16,7 @@ int main() {
 
     for (int i = 1; i < N; ++i) {
         for (int j = 1; j < N; ++j) {
-            A[i][j] = A[i-1][j] + A[i][j-1];
+            A[j][i] = A[j-1][i];
         }
     }
 
