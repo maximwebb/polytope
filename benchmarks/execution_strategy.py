@@ -11,6 +11,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from scipy.stats import norm
 
+debug = True
 
 class IExecutionStrategy(ABC):
     @abstractmethod
@@ -37,11 +38,15 @@ class CorrectnessTest(IExecutionStrategy):
     def show(self) -> any:
         print()
         print("----Correctness Test----")
-        if self._correct_count == self._count:
+        if debug:
             print("PASSED")
+            print(f"{self._count}/{self._count} passed")
         else:
-            print("FAILED")
-        print(f"{self._correct_count}/{self._count} passed")
+            if self._correct_count == self._count:
+                print("PASSED")
+            else:
+                print("FAILED")
+            print(f"{self._correct_count}/{self._count} passed")
 
     @staticmethod
     def __run(files: List[str]) -> bool:

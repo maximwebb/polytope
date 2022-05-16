@@ -35,6 +35,8 @@ namespace llvm {
 		std::vector<IVInfo> IVList;
 		Loop* innerLoop;
 		Loop* outerLoop;
+		PHINode* parentIV;
+		unsigned int maxDepth = 0;
 		std::optional<std::vector<int>> GetValueIfAffine(Value* V);
 		std::optional<LoopDependencies> GetArrayAccessesIfAffine();
 		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformation(const LoopDependencies& assignment);

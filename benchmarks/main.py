@@ -14,15 +14,15 @@ def main():
     test_names = sorted(["LCS", "Dither", "ArrReduce", "TransClos", "GaussJordan", "MatMul"])
     benchmark = Benchmark(
         # TestGenerator(1000),
-        # RandomLinGenerator(1000),
-        SelectedExampleGenerator(2000),
+        RandomLinGenerator(100),
+        # SelectedExampleGenerator(2000),
         [OptClangStrategy(), PolytopeStrategy()],
         # [ClangStrategy(), OptClangStrategy(), PolytopeStrategy(), ClangO3Strategy()],
         # [BarChart(iterations=30, compile_names=["Clang+Opt", "Tope", "Clang+Polly"], test_names=test_names,
         #           normalise=True)],
         # [LineGraph(iterations=40, compile_names=["Clang+Opt", "Tope"])],
         [CorrectnessTest()],
-        7,
+        100,
         False
     )
     benchmark.run()

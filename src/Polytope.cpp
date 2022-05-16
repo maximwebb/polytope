@@ -134,6 +134,10 @@ std::optional<std::vector<int>> PolytopePass::GetValueIfAffine(Value* V) {
 		auto* castInstr = dyn_cast<CastInst>(V);
 		return GetValueIfAffine(castInstr->getOperand(0));
 	}
+	if (V == parentIV) {
+		std::vector<int> res(IVList.size() + 1, 0);
+		return res;
+	}
 	return {};
 }
 
@@ -149,38 +153,45 @@ bool PolytopePass::HasInvariantBounds() {
 
 std::optional<LoopDependencies> PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
 	IVList = {};
+	maxDepth = std::max(L.getLoopDepth(), maxDepth);
 	if (!IsPerfectNest(L, AR.LI, AR.SE)) {
 		return {};
 	}
-	IVInfo OuterIV;
-	IVInfo InnerIV;
+	IVInfo outerIV;
+	IVInfo innerIV;
 
-	OuterIV.loop = &L;
+	outerIV.loop = &L;
 	auto* IL = L.getSubLoops().at(0);
 	if (IL == nullptr) {
 		return {};
 	}
-	InnerIV.loop = IL;
+	innerIV.loop = IL;
 	outerLoop = &L;
 	innerLoop = IL;
 
-	OuterIV.IV = OuterIV.loop->getInductionVariable(AR.SE);
-	InnerIV.IV = InnerIV.loop->getInductionVariable(AR.SE);
+	outerIV.IV = outerIV.loop->getInductionVariable(AR.SE);
+	innerIV.IV = innerIV.loop->getInductionVariable(AR.SE);
 
-	auto InnerBounds = InnerIV.loop->getBounds(AR.SE);
-	auto OuterBounds = OuterIV.loop->getBounds(AR.SE);
+	if (L.getParentLoop()) {
+		parentIV = L.getParentLoop()->getInductionVariable(AR.SE);
+	} else {
+		parentIV = nullptr;
+	}
 
-	if (!InnerBounds.hasValue() || !OuterBounds.hasValue()) {
+	auto innerBounds = innerIV.loop->getBounds(AR.SE);
+	auto outerBounds = outerIV.loop->getBounds(AR.SE);
+
+	if (!innerBounds.hasValue() || !outerBounds.hasValue()) {
 		return {};
 	}
 
-	InnerIV.init = &InnerBounds->getInitialIVValue();
-	OuterIV.init = &OuterBounds->getInitialIVValue();
-	InnerIV.final = &InnerBounds->getFinalIVValue();
-	OuterIV.final = &OuterBounds->getFinalIVValue();
+	innerIV.init = &innerBounds->getInitialIVValue();
+	outerIV.init = &outerBounds->getInitialIVValue();
+	innerIV.final = &innerBounds->getFinalIVValue();
+	outerIV.final = &outerBounds->getFinalIVValue();
 
-	IVList.push_back(OuterIV);
-	IVList.push_back(InnerIV);
+	IVList.push_back(outerIV);
+	IVList.push_back(innerIV);
 
 	auto dependencies = GetArrayAccessesIfAffine();
 
@@ -191,7 +202,6 @@ std::optional<LoopDependencies> PolytopePass::RunAnalysis(Loop& L, LoopStandardA
 		dbgs() << "No dependencies\n";
 		return {};
 	}
-	dbgs() << "Affine\n";
 	return dependencies;
 }
 
@@ -222,7 +232,7 @@ std::optional<LoopDependencies> PolytopePass::GetArrayAccessesIfAffine() {
 		}
 	}
 
-	if (reads.empty() || writes.empty()) {
+	if ((reads.empty() && writes.size() < 2) || writes.empty()) {
 		return {};
 	}
 
@@ -313,11 +323,16 @@ PolytopePass::ComputeAffineTransformationInner(const LoopDependencies& assignmen
 
 std::optional<std::vector<std::vector<int>>>
 PolytopePass::ComputeAffineTransformation(const LoopDependencies& assignment) {
+	unsigned dim = IVList.size();
+
+	if (assignment.HasCacheMisses()) {
+		return IntegerSolver::GetInitialTransform(dim);
+	}
+
 	if (!assignment.HasLoopCarrierDependencies()) {
 		return {};
 	}
 
-	unsigned dim = IVList.size();
 	auto T = IntegerSolver::GetInitialTransform(dim);
 	auto generators = IntegerSolver::GetGenerators(dim);
 	return ComputeAffineTransformationInner(assignment, generators.first, generators.second,
@@ -583,8 +598,12 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 	auto boo = innerLoop->isAnnotatedParallel();
 
 	dbgs() << "================================\n";
-	dbgs() << "Performed polytope optimisation\n";
-	PrintTransform(T);
+	if (assignment->HasCacheMisses()) {
+		dbgs() << "Performed loop interchange\n";
+	} else {
+		dbgs() << "Performed polytope optimisation\n";
+		PrintTransform(T);
+	}
 	dbgs() << "================================\n";
 
 	return PreservedAnalyses::none();
@@ -621,7 +640,13 @@ void PolytopePass::PrintValue(Value* V) {
 
 void PolytopePass::PrintTransform(const std::vector<std::vector<int>>& T) {
 	dbgs() << "Selected transform:\n";
-	for (auto row : T) {
+	std::vector<std::vector<int>> A;
+	if (T.size() != maxDepth) {
+		A = IntegerSolver::EmbedTransform(T, maxDepth);
+	} else {
+		A = T;
+	}
+	for (auto row : A) {
 		dbgs() << "(";
 		for (auto col= row.begin(); col != row.end(); col++) {
 			if (col != row.begin()) {

@@ -219,15 +219,30 @@ public:
 		std::vector<std::vector<int>> res;
 		for (int i = 0; i < dim; i++) {
 			std::vector<int> row(dim, 0);
-			row[dim-i-1] = 1;
+			row[dim - i - 1] = 1;
 			res.push_back(row);
+		}
+		return res;
+	}
+
+	static std::vector<std::vector<int>> EmbedTransform(const std::vector<std::vector<int>>& T, unsigned dim) {
+		if (T.size() != T[0].size()) {
+			throw std::invalid_argument("Embedding is only defined for square matrices.");
+		}
+
+		std::vector<std::vector<int>> res = IdentityMatrix(dim);
+		auto diff = dim - T.size();
+		for (auto i = diff; i < dim; i++) {
+			for (auto j = diff; j < dim; j++) {
+				res[i][j] = T[i - diff][j - diff];
+			}
 		}
 		return res;
 	}
 
 	static int Det(std::vector<std::vector<int>>& A) {
 		if (A.size() != A[0].size()) {
-			throw std::invalid_argument("Determinant is only defined for square matrix.");
+			throw std::invalid_argument("Determinant is only defined for square matrices.");
 		}
 
 		size_t n = A.size();
@@ -239,14 +254,14 @@ public:
 		int res = 0;
 		int sgn = 1;
 		for (int x = 0; x < n; x++) {
-		 	minor = {};
+			minor = {};
 			for (int i = 1; i < n; i++) {
 				minor.emplace_back();
 				for (int j = 0; j < n; j++) {
 					if (j == x) {
 						continue;
 					}
-					minor[i-1].push_back(A[i][j]);
+					minor[i - 1].push_back(A[i][j]);
 				}
 			}
 			res += Det(minor) * sgn * A[0][x];

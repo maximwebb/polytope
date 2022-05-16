@@ -22,7 +22,7 @@ int main() {
 	std::vector<std::vector<int>> C = {{4, 7},
 									  {2, 6}};
 	auto sol3 = IntegerSolver::HermiteNormal(C);
-	int det = IntegerSolver::Det(C);
+	auto F = IntegerSolver::EmbedTransform(C, 4);
 
 	return 0;
 }

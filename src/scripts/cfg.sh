@@ -8,7 +8,7 @@ cd "${SCRIPT_DIR}"/diagrams || exit
 if [ "$1" == "" ]
 then
 #  ../scripts/run.sh
-  opt -dot-cfg ../output/test_opt.ll -enable-new-pm=0 -disable-output
+  opt -dot-cfg ../output/test_poly_opt.ll -enable-new-pm=0 -disable-output
 else
   opt -dot-cfg ../output/"$1" -enable-new-pm=0 -disable-output
 fi
