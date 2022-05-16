@@ -116,7 +116,7 @@ public:
 			}
 			SwapCols(D, i, pivot_index);
 			for (int j = i + 1; j < N; j++) {
-				int q = D[i][j]/pivot;
+				int q = D[i][j] / pivot;
 				for (int k = 0; k < N; k++) {
 					D[k][j] -= q * D[k][i];
 				}
@@ -215,6 +215,47 @@ public:
 		return {A, B};
 	}
 
+	static std::vector<std::vector<int>> GetInitialTransform(unsigned dim = 2) {
+		std::vector<std::vector<int>> res;
+		for (int i = 0; i < dim; i++) {
+			std::vector<int> row(dim, 0);
+			row[dim-i-1] = 1;
+			res.push_back(row);
+		}
+		return res;
+	}
+
+	static int Det(std::vector<std::vector<int>>& A) {
+		if (A.size() != A[0].size()) {
+			throw std::invalid_argument("Determinant is only defined for square matrix.");
+		}
+
+		size_t n = A.size();
+
+		if (n == 1) {
+			return A[0][0];
+		}
+		std::vector<std::vector<int>> minor;
+		int res = 0;
+		int sgn = 1;
+		for (int x = 0; x < n; x++) {
+		 	minor = {};
+			for (int i = 1; i < n; i++) {
+				minor.emplace_back();
+				for (int j = 0; j < n; j++) {
+					if (j == x) {
+						continue;
+					}
+					minor[i-1].push_back(A[i][j]);
+				}
+			}
+			res += Det(minor) * sgn * A[0][x];
+			sgn *= -1;
+		}
+
+		return res;
+	}
+
 private:
 	/* Test if all but one entry in a row is zero - if not, returns the least element */
 	static std::optional<int> GetRowPivot(const std::vector<std::vector<int>>& A, int index) {
@@ -285,7 +326,7 @@ private:
 	}
 
 	static void NegateCol(std::vector<std::vector<int>>& A, int i) {
-		for (auto& row : A) {
+		for (auto& row: A) {
 			row[i] *= -1;
 		}
 	}

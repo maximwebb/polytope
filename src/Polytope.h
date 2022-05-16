@@ -3,7 +3,7 @@
 
 #include <optional>
 #include <utility>
-#include "ArrayAssignment.h"
+#include "LoopDependencies.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/PassManager.h"
@@ -23,7 +23,7 @@ namespace llvm {
 	public:
 		bool IsPerfectNest(Loop& L, LoopInfo& LI, ScalarEvolution& SE);
 		bool HasInvariantBounds();
-		std::optional<ArrayAssignment> RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR);
+		std::optional<LoopDependencies> RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR);
 		std::optional<Instruction*> FindInstr(unsigned int opCode, BasicBlock* basicBlock);
 		int ValueToInt(Value* V);
 		Value* IntToValue(int n);
@@ -36,16 +36,17 @@ namespace llvm {
 		Loop* innerLoop;
 		Loop* outerLoop;
 		std::optional<std::vector<int>> GetValueIfAffine(Value* V);
-		std::optional<ArrayAssignment> GetArrayAccessesIfAffine();
-		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformation(const ArrayAssignment& assignment);
-		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformationInner(const ArrayAssignment& assignment,
+		std::optional<LoopDependencies> GetArrayAccessesIfAffine();
+		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformation(const LoopDependencies& assignment);
+		std::optional<std::vector<std::vector<int>>> ComputeAffineTransformationInner(const LoopDependencies& assignment,
 																					  const std::vector<std::vector<int>>& genA,
 																					  const std::vector<std::vector<int>>& genB,
 																					  const std::vector<std::vector<int>>& transform,
 																					  int depth);
 
-		ArrayAssignment
-		TransformAssignment(const ArrayAssignment& assignment, const std::vector<std::vector<int>>& transform);
+		LoopDependencies
+		TransformAssignment(const LoopDependencies& assignment, const std::vector<std::vector<int>>& transform);
+		void PrintTransform(const std::vector<std::vector<int>>& T);
 	};
 
 } // namespace llvm

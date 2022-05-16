@@ -163,7 +163,7 @@ class SelectedExampleGenerator(IExampleGenerator):
             with open(example, "r") as f1, open(file_name, "w") as f2:
                 text = f1.read()
                 new_text = re.sub("#define (N|M).*", f"#define \\1 {self._size}", text)
-                new_text = re.sub("#define (n|m).*", f"#define \\1 {self._size//3}", new_text)
+                new_text = re.sub("#define (n|m).*", f"#define \\1 {self._size // 3}", new_text)
                 f2.write(new_text)
         return res
 
@@ -179,7 +179,33 @@ class RepeatedExampleGenerator(IExampleGenerator):
             sizes = [int(x) for x in np.linspace(100, self._max_size, n)]
             for i, size in enumerate(sizes):
                 new_text = re.sub("#define (N|M).*", f"#define \\1 {size}", text)
-                file_name = f"./dump/{chr(65+i)}_{self._path.split('/')[-1].split('.')[0]}_{size}.c"
+                file_name = f"./dump/{chr(65 + i)}_{self._path.split('/')[-1].split('.')[0]}_{size}.c"
                 with open(file_name, "w") as f2:
                     f2.write(new_text)
         return sizes
+
+
+class TestExampleGenerator(IExampleGenerator):
+    def __init__(self, path1: str, path2: str, max_size: int):
+        self.path1 = path1
+        self.path2 = path2
+        self._max_size = max_size
+
+    def gen(self, n=6):
+        with open(self.path1, "r") as f1, open(self.path2, "r") as f2:
+            text1 = f1.read()
+            text2 = f2.read()
+            sizes = [int(x) for x in np.linspace(100, self._max_size, n)]
+            for i, size in enumerate(sizes):
+                new_text1 = re.sub("#define (N|M).*", f"#define \\1 {size}", text1)
+                new_text2 = re.sub("#define (N|M).*", f"#define \\1 {size}", text2)
+                file_name1 = f"./dump/A/{int_to_str(i)}_example1_{size}.c"
+                file_name2 = f"./dump/B/{int_to_str(i)}_example2_{size}.c"
+                with open(file_name1, "w") as f3, open(file_name2, "w") as f4:
+                    f3.write(new_text1)
+                    f4.write(new_text2)
+        return sizes
+
+
+def int_to_str(x: int) -> str:
+    return chr(65 + x // 26) + chr(65 + (x % 26))

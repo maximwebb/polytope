@@ -1,4 +1,5 @@
 #include <vector>
+#include <iostream>
 #include "IntegerSolver.h"
 
 int main() {
@@ -21,5 +22,7 @@ int main() {
 	std::vector<std::vector<int>> C = {{4, 7},
 									  {2, 6}};
 	auto sol3 = IntegerSolver::HermiteNormal(C);
+	int det = IntegerSolver::Det(C);
+
 	return 0;
 }

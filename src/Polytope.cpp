@@ -147,7 +147,7 @@ bool PolytopePass::HasInvariantBounds() {
 	return true;
 }
 
-std::optional<ArrayAssignment> PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
+std::optional<LoopDependencies> PolytopePass::RunAnalysis(Loop& L, LoopStandardAnalysisResults& AR) {
 	IVList = {};
 	if (!IsPerfectNest(L, AR.LI, AR.SE)) {
 		return {};
@@ -182,20 +182,22 @@ std::optional<ArrayAssignment> PolytopePass::RunAnalysis(Loop& L, LoopStandardAn
 	IVList.push_back(OuterIV);
 	IVList.push_back(InnerIV);
 
-	auto assignment = GetArrayAccessesIfAffine();
+	auto dependencies = GetArrayAccessesIfAffine();
 
-	if (!HasInvariantBounds() || !assignment || assignment->writeAccess.empty() || assignment->readAccesses.empty()) {
+	if (!HasInvariantBounds()) {
 		dbgs() << "Not affine\n";
+		return {};
+	} else if (!dependencies) {
+		dbgs() << "No dependencies\n";
 		return {};
 	}
 	dbgs() << "Affine\n";
-	return assignment;
+	return dependencies;
 }
 
-std::optional<ArrayAssignment> PolytopePass::GetArrayAccessesIfAffine() {
-	std::vector<std::vector<std::vector<int>>> readVectors;
-	/* In the future, analysis pass will ensure there is precisely one write, and perform this extraction */
-	std::vector<std::vector<int>> writeVector;
+std::optional<LoopDependencies> PolytopePass::GetArrayAccessesIfAffine() {
+	std::vector<std::vector<std::vector<int>>> reads;
+	std::vector<std::vector<std::vector<int>>> writes;
 	for (auto& instr: *(innerLoop->getHeader())) {
 		/* Extract array access index functions for all array read/writes */
 		if (isa<StoreInst>(instr) || isa<LoadInst>(instr)) {
@@ -209,10 +211,9 @@ std::optional<ArrayAssignment> PolytopePass::GetArrayAccessesIfAffine() {
 				auto v2 = GetValueIfAffine(GEPInstr->getOperand(size-1));
 				if (v1 && v2) {
 					if (isWrite) {
-						writeVector.push_back(v1.value());
-						writeVector.push_back(v2.value());
+						writes.push_back({v1.value(), v2.value()});
 					} else {
-						readVectors.push_back({v1.value(), v2.value()});
+						reads.push_back({v1.value(), v2.value()});
 					}
 				}
 			} else {
@@ -220,12 +221,17 @@ std::optional<ArrayAssignment> PolytopePass::GetArrayAccessesIfAffine() {
 			}
 		}
 	}
-	return ArrayAssignment(writeVector, readVectors);
+
+	if (reads.empty() || writes.empty()) {
+		return {};
+	}
+
+	return LoopDependencies(writes, reads);
 }
 
-ArrayAssignment
-PolytopePass::TransformAssignment(const ArrayAssignment& assignment, const std::vector<std::vector<int>>& transform) {
-	std::vector<std::vector<int>> writeVector;
+LoopDependencies
+PolytopePass::TransformAssignment(const LoopDependencies& assignment, const std::vector<std::vector<int>>& transform) {
+	std::vector<std::vector<std::vector<int>>> writeVectors;
 	std::vector<std::vector<std::vector<int>>> readVectors;
 
 	std::vector<std::vector<int>> transform1;
@@ -237,12 +243,17 @@ PolytopePass::TransformAssignment(const ArrayAssignment& assignment, const std::
 	transform1.emplace_back(transform1.at(0).size(), 0);
 	transform1.back().back() = 1;
 
-	for (auto& writeIndex: assignment.writeAccess) {
-		writeVector.push_back(IntegerSolver::LinearTransform(transform1, writeIndex));
+	for (auto& write: assignment.writes) {
+		std::vector<std::vector<int>> v;
+		v.reserve(write.size());
+		for (auto& writeIndex: write) {
+			v.push_back(IntegerSolver::LinearTransform(transform1, writeIndex));
+		}
+		writeVectors.push_back(v);
 	}
 
 	/* Can this be done with a single matrix multiplication? */
-	for (auto& readVector: assignment.readAccesses) {
+	for (auto& readVector: assignment.reads) {
 		std::vector<std::vector<int>> v;
 		v.reserve(readVector.size());
 		for (auto& readIndex: readVector) {
@@ -251,11 +262,11 @@ PolytopePass::TransformAssignment(const ArrayAssignment& assignment, const std::
 		readVectors.push_back(v);
 	}
 
-	return {writeVector, readVectors};
+	return {writeVectors, readVectors};
 }
 
 std::optional<std::vector<std::vector<int>>>
-PolytopePass::ComputeAffineTransformationInner(const ArrayAssignment& assignment,
+PolytopePass::ComputeAffineTransformationInner(const LoopDependencies& assignment,
 											   const std::vector<std::vector<int>>& genA,
 											   const std::vector<std::vector<int>>& genB,
 											   const std::vector<std::vector<int>>& transform,
@@ -263,20 +274,23 @@ PolytopePass::ComputeAffineTransformationInner(const ArrayAssignment& assignment
 	auto transformedAssignment = TransformAssignment(assignment, transform);
 	if (!transformedAssignment.HasLoopCarrierDependencies()) {
 		auto preservesDependencies = true;
-		std::vector<std::vector<int>> dep_vectors;
-		for (auto read : assignment.readAccesses) {
-			std::vector<int> vec = {assignment.writeAccess[0].back() - read[0].back(),
-									assignment.writeAccess[1].back() - read[1].back()};
-			auto transformedVec = IntegerSolver::LinearTransform(transform, vec);
-			for (int i = 0; i < vec.size(); i++) {
-				if ((vec[i]<0) != (transformedVec[i]<0)) {
-					preservesDependencies = false;
+		std::vector<std::vector<int>> depVectors;
+		for (auto write : assignment.writes) {
+			for (auto read : assignment.reads) {
+				std::vector<int> vec = {write[0].back() - read[0].back(),
+										write[1].back() - read[1].back()};
+				auto transformedVec = IntegerSolver::LinearTransform(transform, vec);
+				for (int i = 0; i < vec.size(); i++) {
+					if ((vec[i]<0) != (transformedVec[i]<0)) {
+						preservesDependencies = false;
+					}
+				}
+				if (!preservesDependencies) {
+					break;
 				}
 			}
-			if (!preservesDependencies) {
-				break;
-			}
 		}
+
 		if (preservesDependencies) {
 			return transform;
 		}
@@ -298,19 +312,17 @@ PolytopePass::ComputeAffineTransformationInner(const ArrayAssignment& assignment
 }
 
 std::optional<std::vector<std::vector<int>>>
-PolytopePass::ComputeAffineTransformation(const ArrayAssignment& assignment) {
+PolytopePass::ComputeAffineTransformation(const LoopDependencies& assignment) {
 	if (!assignment.HasLoopCarrierDependencies()) {
 		return {};
 	}
-	std::vector<std::vector<int>> T = {{1, 0},
-									   {0, 1}};
 
 	unsigned dim = IVList.size();
+	auto T = IntegerSolver::GetInitialTransform(dim);
 	auto generators = IntegerSolver::GetGenerators(dim);
 	return ComputeAffineTransformationInner(assignment, generators.first, generators.second,
-											T, 7);
+											T, 5);
 }
-
 
 PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStandardAnalysisResults& AR, LPMUpdater& U) {
 	auto assignment = RunAnalysis(L, AR);
@@ -320,13 +332,12 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 
 	auto transformation = ComputeAffineTransformation(*assignment);
 	if (!transformation) {
+		dbgs() << "No transformation found\n";
 		return PreservedAnalyses::all();
 	}
 	auto T = transformation.value();
-//	std::vector<std::vector<int>> T = {{1, 1},
-//									   {1, 0}};
 	auto H = IntegerSolver::HermiteNormal(T);
-	auto det = T[0][0]*T[1][1] - T[1][0]*T[0][1];
+	auto det = IntegerSolver::Det(T);
 
 	auto outerBounds = outerLoop->getBounds(AR.SE).getValue();
 	auto innerBounds = innerLoop->getBounds(AR.SE).getValue();
@@ -571,7 +582,10 @@ PreservedAnalyses PolytopePass::run(Loop& L, LoopAnalysisManager& AM, LoopStanda
 
 	auto boo = innerLoop->isAnnotatedParallel();
 
+	dbgs() << "================================\n";
 	dbgs() << "Performed polytope optimisation\n";
+	PrintTransform(T);
+	dbgs() << "================================\n";
 
 	return PreservedAnalyses::none();
 }
@@ -602,6 +616,20 @@ void PolytopePass::PrintValue(Value* V) {
 		dbgs() << k->getSExtValue() << "\n";
 	} else {
 		dbgs() << V->getName() << "\n";
+	}
+}
+
+void PolytopePass::PrintTransform(const std::vector<std::vector<int>>& T) {
+	dbgs() << "Selected transform:\n";
+	for (auto row : T) {
+		dbgs() << "(";
+		for (auto col= row.begin(); col != row.end(); col++) {
+			if (col != row.begin()) {
+				dbgs() << ", ";
+			}
+			dbgs() << *col;
+		}
+		dbgs() << ")\n";
 	}
 }
 

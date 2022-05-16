@@ -2,7 +2,7 @@ import copy
 import tkinter
 from tkinter import ttk
 
-width = 20
+width = 50
 
 
 class Graph:
@@ -73,8 +73,8 @@ class Canvas:
             self.c.create_line(*self.convert_point(0, i), *self.convert_point(self.n, i), fill='#e8e8e8')
         l1 = self.c.create_line(*self.convert_point(0, 0), *self.convert_point(0, self.n), arrow=tkinter.LAST)
         l2 = self.c.create_line(*self.convert_point(0, 0), *self.convert_point(self.n, 0), arrow=tkinter.LAST)
-        self.c.create_text(*self.convert_point(self.n, -0.2), text="x")
-        self.c.create_text(*self.convert_point(-0.2, self.n), text="y")
+        self.c.create_text(*self.convert_point(self.n, -0.2), text="p")
+        self.c.create_text(*self.convert_point(-0.2, self.n), text="q")
 
     def set_graph(self, g):
         self.c.delete("point")
@@ -131,12 +131,12 @@ def get_transform():
 
 def plot_graph():
     root = tkinter.Tk()
-    c = Canvas(30)
+    c = Canvas(6)
 
     # k = 4
-    g = gen_dep_graph(0, 0, 7, 5, [lambda i, j: (i, j-1), lambda i, j: (i-1, j)])
+    # g = gen_dep_graph(1, 1, 4, 3, [lambda i, j: (i, j-1), lambda i, j: (i-1, j)])
     # g = gen_dep_graph(0, 0, 7, 5, [lambda i, j: (i-1, j), lambda i, j: (i, j-1), lambda i, j: (i+1, j-1)])
-    # g = gen_graph(1, 1, 4, 3)
+    g = gen_graph(0, 0, 5, 7)
     root.withdraw()
 
     c.set_graph(g)
